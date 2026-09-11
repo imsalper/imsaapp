@@ -287,19 +287,4 @@
       <button class="iconbtn" onclick="closeChat()">✕</button>
     </div>
     <div class="chat-body" id="chat-body">
-      <div class="msg ai">Merhaba! Ürün, fiyat veya stokla ilgili her şeyi sorabilirsin.</div>
-    </div>
-    <div class="chat-input-row">
-      <textarea id="chat-input" placeholder="Bir şey sor..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
-      <button class="sendbtn" onclick="sendChat()" aria-label="Gönder">➤</button>
-    </div>
-  </div>
-</div>
-
-<script>
-const CATS = ["Nalbur","Hırdavat","Ev Dekor","Sıhhi Tesisat","Elektrik Elektronik"];
-const CAT_COLORS = {"Nalbur":"#1F6F68","Hırdavat":"#DB6B22","Ev Dekor":"#5B4A9C","Sıhhi Tesisat":"#215E8C","Elektrik Elektronik":"#8A5A0B"};
-let chatHistory = [];
-
-function fillCatSelect(sel){ sel.innerHTML = CATS.map(c=>`<option value="${c}">${c}</option>`).join(''); }
-fil
+      <div class="msg ai">Merhaba! Ürün, fiyat veya stokla
