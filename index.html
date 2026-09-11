@@ -109,7 +109,7 @@
 </head>
 <body>
 <div id="app">
-
+<datalist id="category-datalist"></datalist>
   <div class="topbar">
     <button class="iconbtn" onclick="openDrawer()" aria-label="Kategoriler">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -199,7 +199,7 @@
     <div id="photo-form" style="display:none">
       <div class="divider"></div>
       <label>Ürün adı</label><input type="text" id="photo-name">
-      <label>Kategori</label><select id="photo-cat"></select>
+      <label>Kategori</label><input type="text" id="photo-cat" list="category-datalist" placeholder="örn: Manşon">
       <div class="row2">
         <div><label>Taban fiyat</label><input type="number" id="photo-taban"></div>
         <div><label>Miktar</label><input type="number" id="photo-qty" value="1"></div>
@@ -233,7 +233,7 @@
   <div class="screen" id="screen-manual">
     <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Elle stok gir</h2></div>
     <label>Ürün adı</label><input type="text" id="m-name">
-    <label>Kategori</label><select id="m-cat"></select>
+    <label>Kategori</label><input type="text" id="m-cat" list="category-datalist" placeholder="örn: PPRC Dirsek, Manşon, Vana...">
     <div class="row2">
       <div><label>Miktar</label><input type="number" id="m-qty" value="1"></div>
       <div><label>Birim</label><input type="text" id="m-unit" placeholder="adet, kg, m..." value="adet"></div>
@@ -297,13 +297,26 @@
 </div>
 
 <script>
-const CATS = ["Nalbur","Hırdavat","Ev Dekor","Sıhhi Tesisat","Elektrik Elektronik"];
-const CAT_COLORS = {"Nalbur":"#1F6F68","Hırdavat":"#DB6B22","Ev Dekor":"#5B4A9C","Sıhhi Tesisat":"#215E8C","Elektrik Elektronik":"#8A5A0B"};
+const CATEGORY_PALETTE = ['#1F6F68','#DB6B22','#5B4A9C','#215E8C','#A1401F','#8A5A0B','#3D8B37','#B23A6B','#4A5FC1','#7A6A1F','#2E7D8C','#9C4A8B'];
+function catColor(cat){
+  let h = 0;
+  const s = cat || '-';
+  for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
+  return CATEGORY_PALETTE[h % CATEGORY_PALETTE.length];
+}
 let chatHistory = [];
 
-function fillCatSelect(sel){ sel.innerHTML = CATS.map(c=>`<option value="${c}">${c}</option>`).join(''); }
-fillCatSelect(document.getElementById('m-cat'));
-fillCatSelect(document.getElementById('photo-cat'));
+async function getAllCategories(){
+  const ids = await getIndex();
+  const set = new Set();
+  for(const id of ids){ const it = await getItem(id); if(it && it.category) set.add(it.category); }
+  return Array.from(set).sort((a,b)=>a.localeCompare(b,'tr'));
+}
+async function refreshCategoryDatalist(){
+  const cats = await getAllCategories();
+  const dl = document.getElementById('category-datalist');
+  if(dl) dl.innerHTML = cats.map(c=>`<option value="${escapeHtml(c)}">`).join('');
+}
 
 function roundPrice(p){ p = Math.max(0,p); return p < 100 ? Math.ceil(p) : Math.ceil(p/10)*10; }
 function computePrice(taban, kdv, iskonto, karmarji){
@@ -397,6 +410,7 @@ async function findByBarcode(code){
 async function refreshHomeCount(){
   const ids = await getIndex();
   document.getElementById('stock-count-label').textContent = ids.length+' ürün kayıtlı';
+  refreshCategoryDatalist();
 }
 refreshHomeCount();
 
@@ -408,10 +422,12 @@ function showScreen(name, opts){
   closeDrawer();
 }
 function goHome(){ showScreen('home'); refreshHomeCount(); }
-function openDrawer(){
+async function openDrawer(){
   const dc = document.getElementById('drawer-cats');
+  const cats = await getAllCategories();
   dc.innerHTML = `<div class="cat-item" onclick="showScreen('list',{cat:null})"><span class="cat-dot" style="background:var(--ink)"></span>Tüm ürünler</div>` +
-    CATS.map(c=>`<div class="cat-item" onclick="showScreen('list',{cat:'${c}'})"><span class="cat-dot" style="background:${CAT_COLORS[c]}"></span>${c}</div>`).join('');
+    (cats.length===0 ? '<div class="hint" style="padding:10px;">Henüz kategori yok, ürün ekledikçe burada listelenecek.</div>' :
+    cats.map(c=>`<div class="cat-item" onclick="showScreen('list',{cat:'${escapeHtml(c).replace(/'/g,"\\'")}'})"><span class="cat-dot" style="background:${catColor(c)}"></span>${escapeHtml(c)}</div>`).join(''));
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-backdrop').classList.add('open');
 }
@@ -432,7 +448,7 @@ async function renderList(cat){
       <div class="info">
         <div class="name">${escapeHtml(it.name)}</div>
         <div class="meta">${it.quantity||1} ${it.unit||'adet'} ${it.barcode? '· '+it.barcode:''}</div>
-        <span class="tag" style="background:${CAT_COLORS[it.category]||'#ccc'}22;color:${CAT_COLORS[it.category]||'#555'}">${it.category||'-'}</span>
+        <span class="tag" style="background:${catColor(it.category)}22;color:${catColor(it.category)}">${it.category||'-'}</span>
       </div>
       <div class="price-tag">${it.price!=null? it.price+' ₺':'-'}</div>
     </div>`).join('');
@@ -468,7 +484,7 @@ async function handlePdfFile(e){
     let failedChunks = 0;
     for(let idx=0; idx<chunks.length; idx++){
       statusEl.textContent = `Yapay zeka ürünleri ayıklıyor... (${idx+1}/${chunks.length} parça, şu ana kadar ${pdfExtractedItems.length} ürün)`;
-      const prompt = `Aşağıda bir hırdavat/nalbur fiyat listesi PDF'inin bir bölümünden çıkarılmış ham metin var. Bu metni ürün ürün ayır. Her ürün için name (ürün adı), category (şu kategorilerden birini seç: ${CATS.join(', ')}), taban_fiyat (metinde geçen ham/taban fiyat, sayı) alanlarını çıkar. Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz (örn: 1/2 inç). SADECE JSON array döndür, başka hiçbir açıklama, markdown işareti ekleme. Bu metinde ürün yoksa boş array [] döndür. Format: [{"name":"...","category":"...","taban_fiyat":0}]\n\nMetin:\n${chunks[idx]}`;
+      const prompt = `Aşağıda bir hırdavat/nalbur fiyat listesi PDF'inin bir bölümünden çıkarılmış ham metin var. Bu metni ürün ürün ayır. Her ürün için name (ürün adı) ve taban_fiyat (metinde geçen ham/taban fiyat, sayı) alanlarını çıkar. category alanı için: ürünün ait olduğu SPESİFİK malzeme türünü yaz (örnek: Dirsek, Manşon, Vana, Rakor, Priz, Anahtar, Vida, Civata, Kilit, Menteşe, Musluk, Boru, Contas vb.) — metinde bir bölüm/başlık görüyorsan onu esas al. ASLA "Sıhhi Tesisat", "Elektrik", "Hırdavat", "Nalbur" gibi genel/şemsiye bir kategori kullanma; her malzeme türü kendi kategorisinde olmalı. Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz (örn: 1/2 inç). SADECE JSON array döndür, başka hiçbir açıklama, markdown işareti ekleme. Bu metinde ürün yoksa boş array [] döndür. Format: [{"name":"...","category":"...","taban_fiyat":0}]\n\nMetin:\n${chunks[idx]}`;
       try{
         const resp = await callClaude([{role:'user', content: prompt}], 4096);
         const items = parseJsonLoose(resp);
@@ -494,9 +510,7 @@ function calcPdfPrices(){
     return `<div class="list-item">
       <div class="info">
         <div class="name">${escapeHtml(it.name)}</div>
-        <select onchange="pdfExtractedItems[${idx}].category=this.value" style="margin-top:4px;font-size:12.5px;padding:4px 8px;">
-          ${CATS.map(c=>`<option ${c===it.category?'selected':''}>${c}</option>`).join('')}
-        </select>
+        <input type="text" list="category-datalist" value="${escapeHtml(it.category||'')}" oninput="pdfExtractedItems[${idx}].category=this.value" style="margin-top:4px;font-size:12.5px;padding:4px 8px;width:auto;">
       </div>
       <div class="price-tag">${price} ₺</div>
     </div>`;
@@ -523,11 +537,11 @@ async function handlePhotoFile(e){
     photoMedia = file.type || 'image/jpeg';
     const resp = await callClaude([{role:'user', content:[
       {type:'image', source:{type:'base64', media_type:photoMedia, data:photoBase64}},
-      {type:'text', text:`Bu görseldeki hırdavat/nalbur ürününü tanı. Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz. SADECE JSON döndür, açıklama ekleme: {"name":"...","category":"şunlardan biri: ${CATS.join(', ')}","price_detected":null veya sayı}`}
+      {type:'text', text:`Bu görseldeki hırdavat/nalbur ürününü tanı. category alanı için ürünün SPESİFİK malzeme türünü yaz (örnek: Dirsek, Manşon, Vana, Rakor, Priz, Anahtar, Vida vb.) — ASLA genel bir başlık (Sıhhi Tesisat, Elektrik, Hırdavat gibi) kullanma. Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz. SADECE JSON döndür, açıklama ekleme: {"name":"...","category":"...","price_detected":null veya sayı}`}
     ]}]);
     const data = parseJsonLoose(resp);
     document.getElementById('photo-name').value = data.name||'';
-    document.getElementById('photo-cat').value = CATS.includes(data.category)? data.category: CATS[0];
+    document.getElementById('photo-cat').value = data.category||'';
     if(data.price_detected) document.getElementById('photo-taban').value = data.price_detected;
     statusEl.textContent = 'Tanındı. Bilgileri kontrol edip ekleyebilirsin.';
     document.getElementById('photo-form').style.display = 'block';
@@ -578,10 +592,9 @@ async function lookupBarcode(code){
   } else {
     resEl.innerHTML = `<div class="divider"></div><div class="hint">Bu barkod stokta yok. Yeni ürün olarak ekle:</div>
       <label>Ürün adı</label><input type="text" id="bc-new-name">
-      <label>Kategori</label><select id="bc-new-cat"></select>
+      <label>Kategori</label><input type="text" id="bc-new-cat" list="category-datalist" placeholder="örn: Vana">
       <div class="row2"><div><label>Miktar</label><input type="number" id="bc-new-qty" value="1"></div><div><label>Fiyat</label><input type="number" id="bc-new-price"></div></div>
       <button class="btn btn-primary" onclick="saveBarcodeItem('${code}')">Stoğa ekle</button>`;
-    fillCatSelect(document.getElementById('bc-new-cat'));
   }
 }
 async function saveBarcodeItem(code){
@@ -625,7 +638,7 @@ async function identifyPriceItem(){
   statusEl.textContent = 'Tanımlanıyor...';
   try{
     let content;
-    const instruction = `Bu ürünü tanı (örnek: PPRC dirsek, vida, kilit, priz vb). Ürünün net fiyatlandırılabilmesi için ölçü/ebat bilgisi gerekiyorsa olcu_gerekli true olsun. Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz. SADECE JSON döndür: {"tanim":"...","category":"şunlardan biri: ${CATS.join(', ')}","olcu_gerekli":true veya false}`;
+    const instruction = `Bu ürünü tanı (örnek: PPRC dirsek, vida, kilit, priz vb). category alanı için ürünün SPESİFİK malzeme türünü yaz (örnek: Dirsek, Manşon, Vana vb.) — ASLA genel bir başlık kullanma. Ürünün net fiyatlandırılabilmesi için ölçü/ebat bilgisi gerekiyorsa olcu_gerekli true olsun. Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz. SADECE JSON döndür: {"tanim":"...","category":"...","olcu_gerekli":true veya false}`;
     if(pfBase64){
       content = [{type:'image', source:{type:'base64', media_type:pfMedia, data:pfBase64}}, {type:'text', text:instruction}];
     } else {
@@ -635,7 +648,7 @@ async function identifyPriceItem(){
     }
     const resp = await callClaude([{role:'user', content}]);
     const data = parseJsonLoose(resp);
-    document.getElementById('pf-card').innerHTML = `<div class="name" style="font-size:16px;font-weight:600;">${escapeHtml(data.tanim)}</div><span class="tag" style="background:${CAT_COLORS[data.category]||'#ccc'}22;color:${CAT_COLORS[data.category]||'#555'}">${data.category||'-'}</span>`;
+    document.getElementById('pf-card').innerHTML = `<div class="name" style="font-size:16px;font-weight:600;">${escapeHtml(data.tanim)}</div><span class="tag" style="background:${catColor(data.category)}22;color:${catColor(data.category)}">${data.category||'-'}</span>`;
     document.getElementById('pf-size-wrap').style.display = data.olcu_gerekli ? 'block' : 'none';
     document.getElementById('pf-result').style.display = 'block';
     statusEl.textContent = '';
