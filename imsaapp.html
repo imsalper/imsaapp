@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>İmsaApp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<style>
+  :root{
+    --bg:#F2EFE8; --panel:#FFFFFF; --ink:#211F1C; --sub:#6B675F;
+    --line:#E2DDD1; --accent:#DB6B22; --accent-ink:#FFFFFF;
+    --teal:#1F6F68; --teal-bg:#E2F1EE;
+    --amber:#8A5A0B; --amber-bg:#FBEEDA;
+    --plum:#5B4A9C; --plum-bg:#ECE9F7;
+    --blue:#215E8C; --blue-bg:#E3EEF6;
+    --coral:#A1401F; --coral-bg:#F8E9E2;
+    --danger:#B0392B;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:0.2px;margin:0;}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);position:relative;display:flex;flex-direction:column;}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;}
+  .topbar h1{font-size:24px;}
+  .iconbtn{width:38px;height:38px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:10px;color:var(--ink);}
+  .iconbtn:active{background:var(--line);}
+  .iconbtn svg{width:24px;height:24px;}
+
+  .screen{padding:18px;flex:1;display:none;}
+  .screen.active{display:block;}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:12px;}
+
+  .action-btn{display:flex;align-items:center;gap:14px;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);padding:16px;margin-bottom:12px;cursor:pointer;transition:transform .1s;}
+  .action-btn:active{transform:scale(0.98);}
+  .action-chip{width:48px;height:48px;border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .action-chip svg{width:24px;height:24px;}
+  .action-title{font-size:16px;font-weight:600;}
+  .action-sub{font-size:12.5px;color:var(--sub);margin-top:2px;}
+
+  .chip-1{background:var(--blue-bg);color:var(--blue);}
+  .chip-2{background:var(--teal-bg);color:var(--teal);}
+  .chip-3{background:var(--amber-bg);color:var(--amber);}
+  .chip-4{background:var(--plum-bg);color:var(--plum);}
+  .chip-5{background:var(--coral-bg);color:var(--coral);}
+
+  .drawer-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:30;display:none;}
+  .drawer-backdrop.open{display:block;}
+  .drawer{position:fixed;top:0;left:0;bottom:0;width:78%;max-width:320px;background:var(--panel);z-index:31;transform:translateX(-105%);transition:transform .22s ease;padding:20px 16px;overflow-y:auto;}
+  .drawer.open{transform:translateX(0);}
+  .drawer h2{font-size:20px;margin-bottom:14px;}
+  .cat-item{display:flex;align-items:center;gap:10px;padding:13px 10px;border-radius:10px;cursor:pointer;font-size:15px;font-weight:500;}
+  .cat-item:active{background:var(--bg);}
+  .cat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+  .back-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+  .back-row h2{font-size:20px;}
+
+  label{display:block;font-size:13px;color:var(--sub);margin:12px 0 6px;font-weight:500;}
+  input[type=text],input[type=number],select,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--panel);color:var(--ink);}
+  textarea{resize:vertical;min-height:70px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 18px;border-radius:12px;border:none;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:16px;}
+  .btn-primary{background:var(--accent);color:var(--accent-ink);}
+  .btn-secondary{background:var(--panel);color:var(--ink);border:1px solid var(--line);}
+  .btn:active{opacity:0.85;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+  .dropzone{border:2px dashed var(--line);border-radius:var(--radius);padding:28px 16px;text-align:center;color:var(--sub);cursor:pointer;background:var(--panel);}
+  .dropzone svg{width:32px;height:32px;margin-bottom:8px;color:var(--sub);}
+  .preview-img{width:100%;border-radius:12px;margin-top:10px;max-height:260px;object-fit:cover;}
+
+  .list-item{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid var(--line);border-radius:12px;margin-bottom:9px;background:var(--panel);}
+  .list-item .info{flex:1;min-width:0;}
+  .list-item .name{font-weight:600;font-size:14.5px;}
+  .list-item .meta{font-size:12.5px;color:var(--sub);margin-top:2px;}
+  .price-tag{font-weight:700;font-size:15px;white-space:nowrap;}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;margin-top:3px;}
+
+  .fab{position:fixed;bottom:22px;right:calc(50% - 240px + 18px);width:56px;height:56px;border-radius:50%;background:var(--plum);color:#fff;border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.25);cursor:pointer;z-index:25;}
+  @media(max-width:520px){.fab{right:18px;}}
+  .fab svg{width:26px;height:26px;}
+
+  .chat-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:40;display:none;align-items:flex-end;justify-content:center;}
+  .chat-overlay.open{display:flex;}
+  .chat-panel{width:100%;max-width:480px;height:78vh;background:var(--panel);border-radius:20px 20px 0 0;display:flex;flex-direction:column;overflow:hidden;}
+  .chat-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);}
+  .chat-body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;}
+  .msg{max-width:80%;padding:10px 13px;border-radius:14px;font-size:14.5px;line-height:1.45;}
+  .msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px;}
+  .msg.ai{align-self:flex-start;background:var(--bg);color:var(--ink);border-bottom-left-radius:4px;white-space:pre-wrap;}
+  .chat-input-row{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line);}
+  .chat-input-row textarea{flex:1;min-height:22px;max-height:90px;}
+  .sendbtn{width:44px;height:44px;border-radius:12px;border:none;background:var(--accent);color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+
+  .empty{text-align:center;color:var(--sub);padding:40px 10px;font-size:14px;}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite;}
+  @keyframes sp{to{transform:rotate(360deg);}}
+  .err{color:var(--danger);font-size:13px;margin-top:8px;}
+  .hint{font-size:12.5px;color:var(--sub);margin-top:10px;line-height:1.5;}
+  .divider{height:1px;background:var(--line);margin:16px 0;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <button class="iconbtn" onclick="openDrawer()" aria-label="Kategoriler">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <h1>İmsaApp</h1>
+    <div style="display:flex;gap:2px;">
+      <button class="iconbtn" onclick="setApiKeyPrompt()" aria-label="Ayarlar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="iconbtn" onclick="goHome()" aria-label="Ana sayfa">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- HOME -->
+  <div class="screen active" id="screen-home">
+    <button class="action-btn" onclick="showScreen('pdf')">
+      <div class="action-chip chip-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg></div>
+      <div><div class="action-title">PDF ile stok yükle</div><div class="action-sub">Fiyat listesini tara, otomatik kategorile</div></div>
+    </button>
+
+    <button class="action-btn" onclick="showScreen('photo')">
+      <div class="action-chip chip-2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+      <div><div class="action-title">Fotoğraf ile stok yükle</div><div class="action-sub">Ürünü çek, yapay zeka tanısın</div></div>
+    </button>
+
+    <button class="action-btn" onclick="showScreen('barcode')">
+      <div class="action-chip chip-3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="4" y2="20"/><line x1="8" y1="4" x2="8" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/><line x1="19" y1="4" x2="19" y2="20"/></svg></div>
+      <div><div class="action-title">Barkod ile stok yükle</div><div class="action-sub">Okut, stoktaysa fiyatı gör</div></div>
+    </button>
+
+    <button class="action-btn" onclick="showScreen('manual')">
+      <div class="action-chip chip-4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
+      <div><div class="action-title">Elle stok gir</div><div class="action-sub">Ürünü doğrudan yaz</div></div>
+    </button>
+
+    <button class="action-btn" onclick="showScreen('pricefind')">
+      <div class="action-chip chip-5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 11.6 12.4 3.4a2 2 0 0 0-1.4-.6H4a1 1 0 0 0-1 1v7a2 2 0 0 0 .6 1.4l8.2 8.2a2 2 0 0 0 2.8 0l6-6a2 2 0 0 0 0-2.8Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg></div>
+      <div><div class="action-title">Ürün fiyatı bul</div><div class="action-sub">Fotoğrafla veya yazarak sor</div></div>
+    </button>
+
+    <div class="divider"></div>
+    <div class="card" style="text-align:center;cursor:pointer;" onclick="showScreen('list',{cat:null})">
+      <div style="font-weight:600;">Tüm stoğu görüntüle</div>
+      <div class="action-sub" id="stock-count-label">Yükleniyor…</div>
+    </div>
+  </div>
+
+  <!-- STOCK LIST -->
+  <div class="screen" id="screen-list">
+    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2 id="list-title">Stok</h2></div>
+    <div id="list-content"></div>
+  </div>
+
+  <!-- PDF UPLOAD -->
+  <div class="screen" id="screen-pdf">
+    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>PDF ile stok yükle</h2></div>
+    <div class="dropzone" id="pdf-drop" onclick="document.getElementById('pdf-file').click()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <div id="pdf-drop-label">Fiyat listesi PDF'ini seçmek için dokun</div>
+    </div>
+    <input type="file" id="pdf-file" accept="application/pdf" style="display:none" onchange="handlePdfFile(event)">
+    <div id="pdf-status" class="hint"></div>
+    <div id="pdf-config" style="display:none">
+      <div class="divider"></div>
+      <div class="row2">
+        <div><label>KDV %</label><input type="number" id="pdf-kdv" value="20"></div>
+        <div><label>İskonto %</label><input type="number" id="pdf-iskonto" value="0"></div>
+      </div>
+      <label>Kâr marjı %</label><input type="number" id="pdf-karmarji" value="50">
+      <button class="btn btn-primary" onclick="calcPdfPrices()">Hesapla ve listele</button>
+    </div>
+    <div id="pdf-results"></div>
+  </div>
+
+  <!-- PHOTO UPLOAD -->
+  <div class="screen" id="screen-photo">
+    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Fotoğraf ile stok yükle</h2></div>
+    <div class="dropzone" id="photo-drop" onclick="document.getElementById('photo-file').click()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <div>Ürün fotoğrafı çek veya seç</div>
+    </div>
+    <input type="file" id="photo-file" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoFile(event)">
+    <img id="photo-preview" class="preview-img" style="display:none">
+    <div id="photo-status" class="hint"></div>
+    <div id="photo-form" style="display:none">
+      <div class="divider"></div>
+      <label>Ürün adı</label><input type="text" id="photo-name">
+      <label>Kategori</label><select id="photo-cat"></select>
+      <div class="row2">
+        <div><label>Taban fiyat</label><input type="number" id="photo-taban"></div>
+        <div><label>Miktar</label><input type="number" id="photo-qty" value="1"></div>
+      </div>
+      <div class="row2">
+        <div><label>KDV %</label><input type="number" id="photo-kdv" value="20"></div>
+        <div><label>Kâr marjı %</label><input type="number" id="photo-karmarji" value="50"></div>
+      </div>
+      <button class="btn btn-primary" onclick="savePhotoItem()">Stoğa ekle</button>
+    </div>
+  </div>
+
+  <!-- BARCODE -->
+  <div class="screen" id="screen-barcode">
+    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Barkod ile stok yükle</h2></div>
+    <div class="dropzone" onclick="document.getElementById('bc-file').click()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="4" y2="20"/><line x1="8" y1="4" x2="8" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/><line x1="19" y1="4" x2="19" y2="20"/></svg>
+      <div>Barkodun fotoğrafını çek</div>
+    </div>
+    <input type="file" id="bc-file" accept="image/*" capture="environment" style="display:none" onchange="handleBarcodeFile(event)">
+    <div id="bc-status" class="hint"></div>
+    <label>Okunamadıysa barkod numarasını elle gir</label>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="bc-manual" placeholder="Barkod no">
+      <button class="btn btn-secondary" style="width:auto;margin:0;padding:11px 16px;" onclick="lookupBarcode(document.getElementById('bc-manual').value)">Ara</button>
+    </div>
+    <div id="bc-result"></div>
+  </div>
+
+  <!-- MANUAL -->
+  <div class="screen" id="screen-manual">
+    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Elle stok gir</h2></div>
+    <label>Ürün adı</label><input type="text" id="m-name">
+    <label>Kategori</label><select id="m-cat"></select>
+    <div class="row2">
+      <div><label>Miktar</label><input type="number" id="m-qty" value="1"></div>
+      <div><label>Birim</label><input type="text" id="m-unit" placeholder="adet, kg, m..." value="adet"></div>
+    </div>
+    <label>Satış fiyatı</label><input type="number" id="m-price">
+    <label>Barkod (opsiyonel)</label><input type="text" id="m-barcode">
+    <button class="btn btn-primary" onclick="saveManualItem()">Stoğa ekle</button>
+    <div id="m-status" class="hint"></div>
+  </div>
+
+  <!-- PRICE FIND -->
+  <div class="screen" id="screen-pricefind">
+    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Ürün fiyatı bul</h2></div>
+    <div class="dropzone" onclick="document.getElementById('pf-file').click()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <div>Ürünün fotoğrafını çek</div>
+    </div>
+    <input type="file" id="pf-file" accept="image/*" capture="environment" style="display:none" onchange="handlePriceFindFile(event)">
+    <img id="pf-preview" class="preview-img" style="display:none">
+    <label>Veya yazarak tarif et</label>
+    <textarea id="pf-desc" placeholder="Örn: yarım inç pprc dirsek"></textarea>
+    <button class="btn btn-secondary" onclick="identifyPriceItem()">Tanımla</button>
+    <div id="pf-status" class="hint"></div>
+    <div id="pf-result" style="display:none">
+      <div class="divider"></div>
+      <div class="card" id="pf-card"></div>
+      <div id="pf-size-wrap" style="display:none">
+        <label>Ölçü / ebat</label><input type="text" id="pf-size" placeholder="örn: 1/2, 20mm...">
+      </div>
+      <label>Fiyat</label><input type="number" id="pf-price">
+      <button class="btn btn-primary" onclick="confirmPriceFind()">Onayla</button>
+    </div>
+  </div>
+
+</div>
+
+<button class="fab" onclick="openChat()" aria-label="Yapay zeka asistanı">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+</button>
+
+<div class="drawer-backdrop" id="drawer-backdrop" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <h2>Kategoriler</h2>
+  <div id="drawer-cats"></div>
+</div>
+
+<div class="chat-overlay" id="chat-overlay">
+  <div class="chat-panel">
+    <div class="chat-head">
+      <strong>İmsaApp asistanı</strong>
+      <button class="iconbtn" onclick="closeChat()">✕</button>
+    </div>
+    <div class="chat-body" id="chat-body">
+      <div class="msg ai">Merhaba! Ürün, fiyat veya stokla ilgili her şeyi sorabilirsin.</div>
+    </div>
+    <div class="chat-input-row">
+      <textarea id="chat-input" placeholder="Bir şey sor..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+      <button class="sendbtn" onclick="sendChat()" aria-label="Gönder">➤</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATS = ["Nalbur","Hırdavat","Ev Dekor","Sıhhi Tesisat","Elektrik Elektronik"];
+const CAT_COLORS = {"Nalbur":"#1F6F68","Hırdavat":"#DB6B22","Ev Dekor":"#5B4A9C","Sıhhi Tesisat":"#215E8C","Elektrik Elektronik":"#8A5A0B"};
+let chatHistory = [];
+
+function fillCatSelect(sel){ sel.innerHTML = CATS.map(c=>`<option value="${c}">${c}</option>`).join(''); }
+fillCatSelect(document.getElementById('m-cat'));
+fillCatSelect(document.getElementById('photo-cat'));
+
+function roundPrice(p){ p = Math.max(0,p); return p < 100 ? Math.ceil(p) : Math.ceil(p/10)*10; }
+function computePrice(taban, kdv, iskonto, karmarji){
+  let v = Number(taban)||0;
+  v = v * (1 - (Number(iskonto)||0)/100);
+  v = v * (1 + (Number(kdv)||0)/100);
+  v = v * (1 + (Number(karmarji)||0)/100);
+  return roundPrice(v);
+}
+
+async function callClaude(messages){
+  const key = getApiKey();
+  if(!key){ throw new Error('Önce sağ üstteki dişli ikonundan Anthropic API anahtarını gir.'); }
+  const body = { model: "claude-sonnet-4-6", max_tokens: 1000, messages };
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify(body)
+  });
+  if(!res.ok){
+    const errBody = await res.text();
+    throw new Error('API hatası ('+res.status+'): '+errBody.slice(0,150));
+  }
+  const data = await res.json();
+  const text = (data.content||[]).map(b=>b.text||'').join('\n');
+  return text;
+}
+function parseJsonLoose(text){
+  const clean = text.replace(/```json|```/g,'').trim();
+  return JSON.parse(clean);
+}
+function fileToBase64(file){
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onload = ()=>res(r.result.split(',')[1]);
+    r.onerror = ()=>rej(new Error('Okuma hatası'));
+    r.readAsDataURL(file);
+  });
+}
+
+// ---- storage (this device's browser only) ----
+function lsGet(key){ try{ return localStorage.getItem(key); }catch(e){ return null; } }
+function lsSet(key, val){ try{ localStorage.setItem(key, val); return true; }catch(e){ return false; } }
+
+async function getIndex(){
+  const v = lsGet('imsaapp:stock-index');
+  return v ? JSON.parse(v) : [];
+}
+async function saveIndex(ids){ lsSet('imsaapp:stock-index', JSON.stringify(ids)); }
+async function getItem(id){
+  const v = lsGet('imsaapp:stock:'+id);
+  return v ? JSON.parse(v) : null;
+}
+async function addStockItem(item){
+  item.id = 'itm_'+Date.now()+Math.random().toString(36).slice(2,7);
+  item.createdAt = new Date().toISOString();
+  lsSet('imsaapp:stock:'+item.id, JSON.stringify(item));
+  const ids = await getIndex();
+  ids.push(item.id);
+  await saveIndex(ids);
+  return item;
+}
+
+// ---- your own Anthropic API key (stored only on this device, never in the code) ----
+function getApiKey(){ return localStorage.getItem('imsaapp:api-key') || ''; }
+function setApiKeyPrompt(){
+  const cur = getApiKey();
+  const key = window.prompt('Anthropic API anahtarını yapıştır (console.anthropic.com > API Keys). Sadece bu cihazda saklanır, kimseyle paylaşılmaz.', cur);
+  if(key !== null){ localStorage.setItem('imsaapp:api-key', key.trim()); alert(key.trim() ? 'Kaydedildi.' : 'Anahtar temizlendi.'); }
+}
+async function findByBarcode(code){
+  const ids = await getIndex();
+  for(const id of ids){ const it = await getItem(id); if(it && it.barcode && it.barcode===code) return it; }
+  return null;
+}
+async function refreshHomeCount(){
+  const ids = await getIndex();
+  document.getElementById('stock-count-label').textContent = ids.length+' ürün kayıtlı';
+}
+refreshHomeCount();
+
+// ---- navigation ----
+function showScreen(name, opts){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  if(name==='list') renderList(opts && opts.cat);
+  closeDrawer();
+}
+function goHome(){ showScreen('home'); refreshHomeCount(); }
+function openDrawer(){
+  const dc = document.getElementById('drawer-cats');
+  dc.innerHTML = `<div class="cat-item" onclick="showScreen('list',{cat:null})"><span class="cat-dot" style="background:var(--ink)"></span>Tüm ürünler</div>` +
+    CATS.map(c=>`<div class="cat-item" onclick="showScreen('list',{cat:'${c}'})"><span class="cat-dot" style="background:${CAT_COLORS[c]}"></span>${c}</div>`).join('');
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-backdrop').classList.add('open');
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.remove('open');
+}
+
+async function renderList(cat){
+  document.getElementById('list-title').textContent = cat || 'Tüm stok';
+  const ids = await getIndex();
+  const items = [];
+  for(const id of ids){ const it = await getItem(id); if(it && (!cat || it.category===cat)) items.push(it); }
+  const el = document.getElementById('list-content');
+  if(items.length===0){ el.innerHTML = '<div class="empty">Bu kategoride henüz ürün yok.</div>'; return; }
+  el.innerHTML = items.reverse().map(it=>`
+    <div class="list-item">
+      <div class="info">
+        <div class="name">${escapeHtml(it.name)}</div>
+        <div class="meta">${it.quantity||1} ${it.unit||'adet'} ${it.barcode? '· '+it.barcode:''}</div>
+        <span class="tag" style="background:${CAT_COLORS[it.category]||'#ccc'}22;color:${CAT_COLORS[it.category]||'#555'}">${it.category||'-'}</span>
+      </div>
+      <div class="price-tag">${it.price!=null? it.price+' ₺':'-'}</div>
+    </div>`).join('');
+}
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// ---- PDF flow ----
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfExtractedItems = [];
+async function handlePdfFile(e){
+  const file = e.target.files[0]; if(!file) return;
+  const statusEl = document.getElementById('pdf-status');
+  statusEl.textContent = 'PDF okunuyor...';
+  document.getElementById('pdf-drop-label').textContent = file.name;
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    let text = '';
+    for(let i=1;i<=pdf.numPages;i++){
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it=>it.str).join(' ') + '\n';
+      if(text.length>7000) break;
+    }
+    statusEl.textContent = 'Yapay zeka ürünleri ayıklıyor...';
+    const prompt = `Aşağıda bir hırdavat/nalbur fiyat listesi PDF'inden çıkarılmış ham metin var. Bu metni ürün ürün ayır. Her ürün için name (ürün adı), category (şu kategorilerden birini seç: ${CATS.join(', ')}), taban_fiyat (metinde geçen ham/taban fiyat, sayı) alanlarını çıkar. SADECE JSON array döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: [{"name":"...","category":"...","taban_fiyat":0}]\n\nMetin:\n${text.slice(0,7000)}`;
+    const resp = await callClaude([{role:'user', content: prompt}]);
+    pdfExtractedItems = parseJsonLoose(resp);
+    statusEl.textContent = pdfExtractedItems.length+' ürün bulundu. Aşağıdan oranları ayarlayıp listele.';
+    document.getElementById('pdf-config').style.display = 'block';
+  }catch(err){
+    statusEl.innerHTML = '<span class="err">Bir hata oluştu: '+escapeHtml(err.message)+'</span>';
+  }
+}
+function calcPdfPrices(){
+  const kdv = document.getElementById('pdf-kdv').value;
+  const iskonto = document.getElementById('pdf-iskonto').value;
+  const karmarji = document.getElementById('pdf-karmarji').value;
+  const el = document.getElementById('pdf-results');
+  el.innerHTML = '<div class="divider"></div>' + pdfExtractedItems.map((it,idx)=>{
+    const price = computePrice(it.taban_fiyat, kdv, iskonto, karmarji);
+    it._price = price;
+    return `<div class="list-item">
+      <div class="info">
+        <div class="name">${escapeHtml(it.name)}</div>
+        <select onchange="pdfExtractedItems[${idx}].category=this.value" style="margin-top:4px;font-size:12.5px;padding:4px 8px;">
+          ${CATS.map(c=>`<option ${c===it.category?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="price-tag">${price} ₺</div>
+    </div>`;
+  }).join('') + `<button class="btn btn-primary" onclick="saveAllPdfItems()">Tümünü stoğa ekle</button>`;
+}
+async function saveAllPdfItems(){
+  for(const it of pdfExtractedItems){
+    await addStockItem({name:it.name, category:it.category, price:it._price, quantity:1, unit:'adet'});
+  }
+  document.getElementById('pdf-results').innerHTML = '<div class="hint">Eklendi. Ana sayfaya dönebilirsin.</div>';
+  refreshHomeCount();
+}
+
+// ---- Photo upload flow ----
+let photoBase64 = null, photoMedia = null;
+async function handlePhotoFile(e){
+  const file = e.target.files[0]; if(!file) return;
+  const statusEl = document.getElementById('photo-status');
+  const prev = document.getElementById('photo-preview');
+  prev.src = URL.createObjectURL(file); prev.style.display='block';
+  statusEl.textContent = 'Yapay zeka ürünü tanıyor...';
+  try{
+    photoBase64 = await fileToBase64(file);
+    photoMedia = file.type || 'image/jpeg';
+    const resp = await callClaude([{role:'user', content:[
+      {type:'image', source:{type:'base64', media_type:photoMedia, data:photoBase64}},
+      {type:'text', text:`Bu görseldeki hırdavat/nalbur ürününü tanı. SADECE JSON döndür, açıklama ekleme: {"name":"...","category":"şunlardan biri: ${CATS.join(', ')}","price_detected":null veya sayı}`}
+    ]}]);
+    const data = parseJsonLoose(resp);
+    document.getElementById('photo-name').value = data.name||'';
+    document.getElementById('photo-cat').value = CATS.includes(data.category)? data.category: CATS[0];
+    if(data.price_detected) document.getElementById('photo-taban').value = data.price_detected;
+    statusEl.textContent = 'Tanındı. Bilgileri kontrol edip ekleyebilirsin.';
+    document.getElementById('photo-form').style.display = 'block';
+  }catch(err){
+    statusEl.innerHTML = '<span class="err">Tanıma başarısız, elle gir: '+escapeHtml(err.message)+'</span>';
+    document.getElementById('photo-form').style.display = 'block';
+  }
+}
+async function savePhotoItem(){
+  const taban = document.getElementById('photo-taban').value;
+  const kdv = document.getElementById('photo-kdv').value;
+  const karmarji = document.getElementById('photo-karmarji').value;
+  const price = taban ? computePrice(taban, kdv, 0, karmarji) : null;
+  await addStockItem({
+    name: document.getElementById('photo-name').value,
+    category: document.getElementById('photo-cat').value,
+    price, quantity: Number(document.getElementById('photo-qty').value)||1, unit:'adet'
+  });
+  document.getElementById('photo-status').textContent = 'Stoğa eklendi.';
+  document.getElementById('photo-form').style.display='none';
+  refreshHomeCount();
+}
+
+// ---- Barcode flow ----
+async function handleBarcodeFile(e){
+  const file = e.target.files[0]; if(!file) return;
+  const statusEl = document.getElementById('bc-status');
+  statusEl.textContent = 'Barkod okunuyor...';
+  const dataUrl = URL.createObjectURL(file);
+  Quagga.decodeSingle({
+    src: dataUrl, numOfWorkers:0, inputStream:{size:1000},
+    decoder:{readers:["ean_reader","ean_8_reader","code_128_reader","upc_reader"]}
+  }, function(result){
+    if(result && result.codeResult){
+      statusEl.textContent = 'Okunan barkod: '+result.codeResult.code;
+      lookupBarcode(result.codeResult.code);
+    } else {
+      statusEl.innerHTML = '<span class="err">Barkod okunamadı. Aşağıdan elle girebilirsin.</span>';
+    }
+  });
+}
+async function lookupBarcode(code){
+  if(!code) return;
+  const resEl = document.getElementById('bc-result');
+  const found = await findByBarcode(code);
+  if(found){
+    resEl.innerHTML = `<div class="divider"></div><div class="list-item"><div class="info"><div class="name">${escapeHtml(found.name)}</div><div class="meta">${found.quantity} ${found.unit} · ${code}</div></div><div class="price-tag">${found.price} ₺</div></div>`;
+  } else {
+    resEl.innerHTML = `<div class="divider"></div><div class="hint">Bu barkod stokta yok. Yeni ürün olarak ekle:</div>
+      <label>Ürün adı</label><input type="text" id="bc-new-name">
+      <label>Kategori</label><select id="bc-new-cat"></select>
+      <div class="row2"><div><label>Miktar</label><input type="number" id="bc-new-qty" value="1"></div><div><label>Fiyat</label><input type="number" id="bc-new-price"></div></div>
+      <button class="btn btn-primary" onclick="saveBarcodeItem('${code}')">Stoğa ekle</button>`;
+    fillCatSelect(document.getElementById('bc-new-cat'));
+  }
+}
+async function saveBarcodeItem(code){
+  await addStockItem({
+    name:document.getElementById('bc-new-name').value,
+    category:document.getElementById('bc-new-cat').value,
+    quantity:Number(document.getElementById('bc-new-qty').value)||1,
+    unit:'adet', price:Number(document.getElementById('bc-new-price').value)||null,
+    barcode: code
+  });
+  document.getElementById('bc-result').innerHTML = '<div class="hint">Eklendi.</div>';
+  refreshHomeCount();
+}
+
+// ---- Manual entry ----
+async function saveManualItem(){
+  const name = document.getElementById('m-name').value.trim();
+  if(!name){ document.getElementById('m-status').innerHTML='<span class="err">Ürün adı gerekli.</span>'; return; }
+  await addStockItem({
+    name, category: document.getElementById('m-cat').value,
+    quantity: Number(document.getElementById('m-qty').value)||1,
+    unit: document.getElementById('m-unit').value||'adet',
+    price: Number(document.getElementById('m-price').value)||null,
+    barcode: document.getElementById('m-barcode').value||null
+  });
+  document.getElementById('m-status').textContent = 'Eklendi.';
+  ['m-name','m-price','m-barcode'].forEach(id=>document.getElementById(id).value='');
+  refreshHomeCount();
+}
+
+// ---- Price find ----
+let pfBase64=null, pfMedia=null;
+async function handlePriceFindFile(e){
+  const file = e.target.files[0]; if(!file) return;
+  const prev = document.getElementById('pf-preview');
+  prev.src = URL.createObjectURL(file); prev.style.display='block';
+  pfBase64 = await fileToBase64(file); pfMedia = file.type||'image/jpeg';
+}
+async function identifyPriceItem(){
+  const statusEl = document.getElementById('pf-status');
+  statusEl.textContent = 'Tanımlanıyor...';
+  try{
+    let content;
+    const instruction = `Bu ürünü tanı (örnek: PPRC dirsek, vida, kilit, priz vb). Ürünün net fiyatlandırılabilmesi için ölçü/ebat bilgisi gerekiyorsa olcu_gerekli true olsun. SADECE JSON döndür: {"tanim":"...","category":"şunlardan biri: ${CATS.join(', ')}","olcu_gerekli":true veya false}`;
+    if(pfBase64){
+      content = [{type:'image', source:{type:'base64', media_type:pfMedia, data:pfBase64}}, {type:'text', text:instruction}];
+    } else {
+      const desc = document.getElementById('pf-desc').value.trim();
+      if(!desc){ statusEl.innerHTML='<span class="err">Fotoğraf ekle veya açıklama yaz.</span>'; return; }
+      content = instruction + '\n\nÜrün açıklaması: ' + desc;
+    }
+    const resp = await callClaude([{role:'user', content}]);
+    const data = parseJsonLoose(resp);
+    document.getElementById('pf-card').innerHTML = `<div class="name" style="font-size:16px;font-weight:600;">${escapeHtml(data.tanim)}</div><span class="tag" style="background:${CAT_COLORS[data.category]||'#ccc'}22;color:${CAT_COLORS[data.category]||'#555'}">${data.category||'-'}</span>`;
+    document.getElementById('pf-size-wrap').style.display = data.olcu_gerekli ? 'block' : 'none';
+    document.getElementById('pf-result').style.display = 'block';
+    statusEl.textContent = '';
+    window._pfData = data;
+  }catch(err){
+    statusEl.innerHTML = '<span class="err">Bir hata oluştu: '+escapeHtml(err.message)+'</span>';
+  }
+}
+async function confirmPriceFind(){
+  const data = window._pfData || {};
+  const size = document.getElementById('pf-size').value;
+  const price = document.getElementById('pf-price').value;
+  const fullName = size ? data.tanim+' ('+size+')' : data.tanim;
+  document.getElementById('pf-result').insertAdjacentHTML('beforeend', `<div class="hint">${escapeHtml(fullName)}: <strong>${price||'-'} ₺</strong></div>
+    <button class="btn btn-secondary" onclick="saveFoundPrice('${escapeHtml(fullName).replace(/'/g,"\\'")}', ${Number(price)||'null'}, '${data.category}')">Stoğa da ekle</button>`);
+}
+async function saveFoundPrice(name, price, category){
+  await addStockItem({name, category, price, quantity:1, unit:'adet'});
+  refreshHomeCount();
+}
+
+// ---- Chat ----
+function openChat(){ document.getElementById('chat-overlay').classList.add('open'); }
+function closeChat(){ document.getElementById('chat-overlay').classList.remove('open'); }
+async function sendChat(){
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim(); if(!text) return;
+  const body = document.getElementById('chat-body');
+  body.insertAdjacentHTML('beforeend', `<div class="msg user">${escapeHtml(text)}</div>`);
+  chatHistory.push({role:'user', content:text});
+  input.value='';
+  body.scrollTop = body.scrollHeight;
+  const loadingId = 'l'+Date.now();
+  body.insertAdjacentHTML('beforeend', `<div class="msg ai" id="${loadingId}">...</div>`);
+  body.scrollTop = body.scrollHeight;
+  try{
+    const sysMsg = {role:'user', content:'Sen İmsaApp adlı bir nalbur/hırdavat dükkanının stok ve fiyat asistanısın. Ürün, kategori, fiyatlandırma konularında pratik ve kısa yardım et; gerekirse genel sohbet de edebilirsin. Bu ilk mesajdır, buna kısaca selam vererek değil, sıradaki gerçek soruya cevap vererek başla.'};
+    const resp = await callClaude([sysMsg, ...chatHistory]);
+    document.getElementById(loadingId).textContent = resp;
+    chatHistory.push({role:'assistant', content:resp});
+  }catch(err){
+    document.getElementById(loadingId).innerHTML = '<span class="err">Hata: '+escapeHtml(err.message)+'</span>';
+  }
+  body.scrollTop = body.scrollHeight;
+}
+</script>
+</body>
+</html>
