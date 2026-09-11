@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>İmsaApp</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --bg:#FFF7ED; --ink:#1A1023; --ink-muted:#6B5B73; --card:#FFFFFF; --line:#F0E4D8;
+    --orange:#FF6B35; --orange-dark:#E1501C; --teal:#00B4A6; --purple:#7C5CFC; --yellow:#FFC53D;
+    --pink:#FF3D77; --danger:#E1501C;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Manrope',sans-serif;background:#EDE3F5;color:var(--ink);}
+  .phone{max-width:420px;margin:0 auto;min-height:100vh;background:var(--bg);display:flex;flex-direction:column;position:relative;overflow-x:hidden;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:linear-gradient(120deg,var(--purple),var(--pink));color:#fff;}
+  .menu-btn{background:rgba(255,255,255,0.2);border:none;color:#fff;width:38px;height:38px;border-radius:10px;font-size:18px;cursor:pointer;}
+  .logo{font-size:20px;font-weight:800;letter-spacing:-0.02em;}
+  .screen{display:none;flex:1;padding:18px;overflow-y:auto;}
+  .screen.active{display:block;}
+  .back-btn{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--purple);background:none;border:none;font-family:inherit;cursor:pointer;padding:0 0 14px;font-weight:700;}
+  .big-btn{display:flex;align-items:center;gap:14px;width:100%;padding:18px;border-radius:16px;border:none;color:#fff;font-family:inherit;font-size:15px;font-weight:700;text-align:left;cursor:pointer;margin-bottom:12px;box-shadow:0 6px 0 rgba(0,0,0,0.12);}
+  .big-btn .emoji{font-size:26px;}
+  .big-btn:active{transform:translateY(3px);box-shadow:0 3px 0 rgba(0,0,0,0.12);}
+  .btn-1{background:linear-gradient(120deg,var(--orange),#FF8A5B);}
+  .btn-2{background:linear-gradient(120deg,var(--teal),#00D6C4);}
+  .btn-3{background:linear-gradient(120deg,var(--purple),#9B7CFF);}
+  .btn-4{background:linear-gradient(120deg,#3D8BFF,#5FA8FF);}
+  .btn-5{background:linear-gradient(120deg,var(--pink),#FF6FA0);}
+  .field{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:12px;font-size:14px;font-family:inherit;margin-bottom:10px;background:var(--card);color:var(--ink);}
+  select.field{appearance:none;}
+  input:focus, select:focus, textarea:focus{outline:2px solid var(--purple);outline-offset:1px;}
+  .btn-primary{width:100%;background:var(--purple);color:#fff;border:none;padding:14px;border-radius:12px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;}
+  .btn-secondary{width:100%;background:#fff;color:var(--ink);border:2px solid var(--line);padding:12px;border-radius:12px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;}
+  .card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px;}
+  .section-title{font-size:16px;font-weight:800;margin:6px 0 14px;}
+  .small-muted{font-size:12px;color:var(--ink-muted);}
+  .row-3{display:flex;gap:8px;}
+  .row-3 .field{flex:1;}
+  .product-row{display:flex;align-items:center;gap:10px;padding:12px;border:2px solid var(--line);border-radius:12px;margin-bottom:8px;background:#fff;}
+  .product-row img{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;background:#eee;}
+  .chip{display:inline-block;font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--yellow);color:#5A3D00;}
+  .err-text{font-size:12px;color:var(--danger);margin:4px 0 8px;font-weight:700;}
+
+  /* category drawer */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;z-index:40;}
+  .overlay.active{display:block;}
+  .drawer{position:fixed;top:0;left:0;bottom:0;width:78%;max-width:320px;background:#fff;z-index:50;transform:translateX(-100%);transition:transform 0.25s ease;padding:20px;overflow-y:auto;}
+  .drawer.active{transform:translateX(0);}
+  .drawer-title{font-size:18px;font-weight:800;margin-bottom:16px;}
+  .cat-item{display:flex;align-items:center;justify-content:space-between;padding:14px;border-radius:12px;margin-bottom:8px;background:var(--bg);cursor:pointer;font-weight:700;font-size:14px;}
+  .cat-item .count{font-size:12px;color:var(--ink-muted);font-weight:500;}
+
+  /* AI chat bubble */
+  .ai-bubble{position:fixed;bottom:22px;right:calc(50% - 210px + 18px);width:56px;height:56px;border-radius:50%;background:linear-gradient(120deg,var(--purple),var(--pink));display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 8px 20px rgba(124,92,252,0.5);border:none;cursor:pointer;z-index:45;}
+  @media (max-width:460px){ .ai-bubble{ right:18px; } }
+  .chat-panel{position:fixed;bottom:0;left:0;right:0;max-width:420px;margin:0 auto;background:#fff;border-radius:20px 20px 0 0;z-index:60;display:none;flex-direction:column;height:72vh;box-shadow:0 -8px 30px rgba(0,0,0,0.2);}
+  .chat-panel.active{display:flex;}
+  .chat-header{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:2px solid var(--line);}
+  .chat-msgs{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px;}
+  .chat-bubble-msg{padding:10px 14px;border-radius:14px;font-size:13px;max-width:80%;line-height:1.4;}
+  .chat-them{background:var(--bg);align-self:flex-start;}
+  .chat-me{background:var(--purple);color:#fff;align-self:flex-end;}
+  .chat-input-row{display:flex;gap:8px;padding:14px 18px;border-top:2px solid var(--line);}
+  .chat-input-row input{flex:1;margin:0;}
+  .send-btn{background:var(--purple);color:#fff;border:none;width:44px;border-radius:10px;font-size:16px;cursor:pointer;flex-shrink:0;}
+
+  .photo-preview{width:100%;height:220px;border-radius:14px;object-fit:cover;margin-bottom:12px;background:#eee;}
+  .toggle-row{display:flex;gap:8px;margin-bottom:10px;}
+  .toggle-btn{flex:1;padding:10px;font-size:12px;font-weight:700;border-radius:10px;border:2px solid var(--line);background:#fff;color:var(--ink-muted);font-family:inherit;cursor:pointer;}
+  .toggle-btn.active{background:var(--purple);color:#fff;border-color:var(--purple);}
+  .spinner-text{font-size:13px;color:var(--purple);font-weight:700;}
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+
+  <div class="topbar">
+    <button class="menu-btn" onclick="openDrawer()">☰</button>
+    <div class="logo">🔧 İmsaApp</div>
+    <div style="width:38px;"></div>
+  </div>
+
+  <!-- HOME -->
+  <section class="screen active" id="screen-home">
+    <div class="section-title" style="margin-top:6px;">Ne yapmak istersin?</div>
+    <button class="big-btn btn-1" onclick="showScreen('pdf')"><span class="emoji">📄</span> PDF ile Stok Yükle</button>
+    <button class="big-btn btn-2" onclick="showScreen('photo')"><span class="emoji">📷</span> Fotoğraf ile Stok Yükle</button>
+    <button class="big-btn btn-3" onclick="showScreen('barcode')"><span class="emoji">🔢</span> Barkod ile Stok Yükle</button>
+    <button class="big-btn btn-4" onclick="showScreen('stocklist')"><span class="emoji">📋</span> Stok Listesini Gör</button>
+    <button class="big-btn btn-5" onclick="showScreen('findprice')"><span class="emoji">💰</span> Ürün Fiyatı Bul</button>
+    <div class="small-muted" style="text-align:center;margin-top:10px;">Toplam <b id="stockCountLabel">0</b> ürün kayıtlı</div>
+  </section>
+
+  <!-- PDF UPLOAD -->
+  <section class="screen" id="screen-pdf">
+    <button class="back-btn" onclick="showScreen('home')">← Geri</button>
+    <div class="section-title">📄 PDF ile Stok Yükle</div>
+    <input class="field" id="pdfFile" type="file" accept="application/pdf">
+    <div class="row-3">
+      <input class="field" id="pdfKdv" type="number" placeholder="KDV %" value="20">
+      <input class="field" id="pdfIskonto" type="number" placeholder="İskonto %" value="0">
+      <input class="field" id="pdfKar" type="number" placeholder="Kâr marjı %" value="50">
+    </div>
+    <button class="btn-primary" id="pdfAnalyzeBtn" onclick="analyzePdf()">PDF'yi Tara ve Listele</button>
+    <div class="err-text" id="pdfErr" style="display:none;"></div>
+    <div id="pdfResults" style="margin-top:14px;"></div>
+  </section>
+
+  <!-- PHOTO UPLOAD -->
+  <section class="screen" id="screen-photo">
+    <button class="back-btn" onclick="showScreen('home')">← Geri</button>
+    <div class="section-title">📷 Fotoğraf ile Stok Yükle</div>
+    <input class="field" id="photoFile" type="file" accept="image/*" capture="environment">
+    <img id="photoPreview" class="photo-preview" style="display:none;">
+    <button class="btn-primary" id="photoAnalyzeBtn" onclick="analyzePhoto()">Fotoğrafı Analiz Et</button>
+    <div class="err-text" id="photoErr" style="display:none;"></div>
+    <div id="photoResultBox" style="margin-top:14px;display:none;">
+      <input class="field" id="photoName" type="text" placeholder="Ürün adı">
+      <select class="field" id="photoCategory"></select>
+      <div class="row-3">
+        <input class="field" id="photoKdv" type="number" placeholder="KDV %" value="20">
+        <input class="field" id="photoIskonto" type="number" placeholder="İskonto %" value="0">
+        <input class="field" id="photoBasePrice" type="number" placeholder="Baz fiyat">
+      </div>
+      <button class="btn-primary" onclick="savePhotoProduct()">Stoğa Ekle</button>
+    </div>
+  </section>
+
+  <!-- BARCODE -->
+  <section class="screen" id="screen-barcode">
+    <button class="back-btn" onclick="showScreen('home')">← Geri</button>
+    <div class="section-title">🔢 Barkod ile Stok Yükle</div>
+    <input class="field" id="barcodeInput" type="text" placeholder="Barkod numarasını yaz (kamera okuma yakında)">
+    <button class="btn-primary" onclick="lookupBarcode()">Ara</button>
+    <div id="barcodeResult" style="margin-top:14px;"></div>
+  </section>
+
+  <!-- STOCK LIST + CATEGORY VIEW -->
+  <section class="screen" id="screen-stocklist">
+    <button class="back-btn" onclick="showScreen('home')">← Geri</button>
+    <div class="section-title" id="stocklistTitle">📋 Tüm Stok</div>
+    <input class="field" id="stocklistSearch" type="text" placeholder="Ürün ara...">
+    <div id="stocklistBox"></div>
+  </section>
+
+  <!-- FIND PRICE -->
+  <section class="screen" id="screen-findprice">
+    <button class="back-btn" onclick="showScreen('home')">← Geri</button>
+    <div class="section-title">💰 Ürün Fiyatı Bul</div>
+    <div class="small-muted" style="margin-bottom:10px;">Ürünü tarif et (ör. "pprc dirsek 1/2"), yapay zeka stoktan bulmaya çalışsın.</div>
+    <div id="findPriceMsgs" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;">
+      <input class="field" id="findPriceInput" type="text" placeholder="Ürünü tarif et..." style="margin:0;">
+      <button class="send-btn" onclick="sendFindPrice()">➤</button>
+    </div>
+  </section>
+
+  <button class="ai-bubble" onclick="openChat()">💬</button>
+</div>
+
+<div class="overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-title">Kategoriler</div>
+  <div id="categoryList"></div>
+</div>
+
+<div class="chat-panel" id="chatPanel">
+  <div class="chat-header">
+    <div style="font-weight:800;">💬 İmsaApp Asistanı</div>
+    <button class="menu-btn" style="background:var(--bg);color:var(--ink);" onclick="closeChat()">✕</button>
+  </div>
+  <div class="chat-msgs" id="chatMsgs"></div>
+  <div class="chat-input-row">
+    <input class="field" id="chatInput" type="text" placeholder="Bir şey sor...">
+    <button class="send-btn" onclick="sendChat()">➤</button>
+  </div>
+</div>
+
+<script>
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function money(n){ return Math.round(n).toLocaleString('tr-TR'); }
+
+const CATEGORIES = ['Nalbur','Hırdavat','Elektrik','Sıhhi Tesisat','Boya','El Aletleri','Bahçe','Diğer'];
+
+/* ---------- STOK (localStorage'da saklanır, sadece bu cihazda) ---------- */
+function loadStock(){
+  try{ return JSON.parse(localStorage.getItem('imsaapp_stock') || '[]'); }catch(e){ return []; }
+}
+function saveStock(list){
+  localStorage.setItem('imsaapp_stock', JSON.stringify(list));
+  updateStockCount();
+}
+function addProducts(newItems){
+  const list = loadStock();
+  newItems.forEach(p => list.push({ id: Date.now() + Math.random(), ...p }));
+  saveStock(list);
+}
+function updateStockCount(){
+  document.getElementById('stockCountLabel').textContent = loadStock().length;
+}
+
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  window.scrollTo(0,0);
+  if(name === 'stocklist'){ window._stocklistCategory = null; renderStockList(); }
+}
+
+/* ---------- KATEGORİ ÇEKMECESİ ---------- */
+function openDrawer(){
+  document.getElementById('drawer').classList.add('active');
+  document.getElementById('drawerOverlay').classList.add('active');
+  renderCategoryDrawer();
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('active');
+  document.getElementById('drawerOverlay').classList.remove('active');
+}
+function renderCategoryDrawer(){
+  const stock = loadStock();
+  document.getElementById('categoryList').innerHTML = CATEGORIES.map(c => {
+    const count = stock.filter(p=>p.category===c).length;
+    return `<div class="cat-item" onclick="openCategory('${c}')"><span>${esc(c)}</span><span class="count">${count} ürün</span></div>`;
+  }).join('');
+}
+function openCategory(cat){
+  closeDrawer();
+  window._stocklistCategory = cat;
+  showScreen('stocklist');
+  document.getElementById('stocklistTitle').textContent = '📋 ' + cat;
+  renderStockList();
+}
+
+/* ---------- STOK LİSTESİ ---------- */
+function renderStockList(){
+  const q = (document.getElementById('stocklistSearch').value || '').toLocaleLowerCase('tr');
+  let list = loadStock();
+  if(window._stocklistCategory) list = list.filter(p => p.category === window._stocklistCategory);
+  if(!window._stocklistCategory) document.getElementById('stocklistTitle').textContent = '📋 Tüm Stok';
+  if(q) list = list.filter(p => (p.name||'').toLocaleLowerCase('tr').includes(q));
+  const box = document.getElementById('stocklistBox');
+  if(!list.length){ box.innerHTML = '<div class="small-muted">Henüz ürün yok.</div>'; return; }
+  box.innerHTML = list.map(p => `
+    <div class="product-row">
+      ${p.image ? `<img src="${esc(p.image)}">` : `<div style="width:44px;height:44px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center;">📦</div>`}
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${esc(p.name)}</div>
+        <div class="small-muted"><span class="chip">${esc(p.category)}</span>${p.barcode ? ' · ' + esc(p.barcode) : ''}</div>
+      </div>
+      <div style="font-weight:800;white-space:nowrap;">${money(p.finalPrice||p.basePrice||0)}₺</div>
+    </div>`).join('');
+}
+document.getElementById('stocklistSearch').addEventListener('input', renderStockList);
+
+/* ---------- PDF İLE STOK YÜKLE ---------- */
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+async function extractPdfText(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  for(let i=1; i<=pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(it => it.str).join(' ') + '\n';
+  }
+  return text;
+}
+
+async function analyzePdf(){
+  const fileInput = document.getElementById('pdfFile');
+  const errEl = document.getElementById('pdfErr');
+  const btn = document.getElementById('pdfAnalyzeBtn');
+  errEl.style.display = 'none';
+  if(!fileInput.files[0]){ errEl.textContent = 'Önce bir PDF seç.'; errEl.style.display='block'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Taranıyor...';
+  document.getElementById('pdfResults').innerHTML = '<div class="spinner-text">PDF sayfaları okunuyor, yapay zeka ürünleri çıkarıyor... Bu biraz sürebilir.</div>';
+  try{
+    const text = await extractPdfText(fileInput.files[0]);
+    const kdv = document.getElementById('pdfKdv').value;
+    const iskonto = document.getElementById('pdfIskonto').value;
+    const karMarji = document.getElementById('pdfKar').value;
+    const res = await fetch('/api/analyze-pdf', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text, kdv, iskonto, karMarji })
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    window._pdfProducts = data.products || [];
+    renderPdfResults();
+  }catch(err){
+    document.getElementById('pdfResults').innerHTML = '';
+    errEl.textContent = 'Analiz başarısız: ' + err.message;
+    errEl.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = "PDF'yi Tara ve Listele";
+  }
+}
+
+function renderPdfResults(){
+  const list = window._pdfProducts || [];
+  const box = document.getElementById('pdfResults');
+  if(!list.length){ box.innerHTML = '<div class="small-muted">Ürün bulunamadı.</div>'; return; }
+  box.innerHTML = `<div class="small-muted" style="margin-bottom:8px;">${list.length} ürün bulundu, kontrol edip kaydet:</div>` +
+    list.map((p,i) => `
+    <div class="product-row">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${esc(p.name)}</div>
+        <div class="small-muted"><span class="chip">${esc(p.category)}</span></div>
+      </div>
+      <div style="font-weight:800;">${money(p.finalPrice)}₺</div>
+    </div>`).join('') +
+    `<button class="btn-primary" style="margin-top:10px;" onclick="savePdfProducts()">Tümünü Stoğa Kaydet (${list.length})</button>`;
+}
+
+function savePdfProducts(){
+  addProducts(window._pdfProducts || []);
+  window._pdfProducts = [];
+  document.getElementById('pdfResults').innerHTML = '<div class="small-muted">✓ Kaydedildi.</div>';
+  document.getElementById('pdfFile').value = '';
+}
+
+/* ---------- FOTOĞRAF İLE STOK YÜKLE ---------- */
+document.getElementById('photoFile').addEventListener('change', function(){
+  const file = this.files[0];
+  if(!file) return;
+  const preview = document.getElementById('photoPreview');
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+  document.getElementById('photoResultBox').style.display = 'none';
+});
+
+const catSelect = document.getElementById('photoCategory');
+catSelect.innerHTML = CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+
+function fileToBase64(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function analyzePhoto(){
+  const fileInput = document.getElementById('photoFile');
+  const errEl = document.getElementById('photoErr');
+  const btn = document.getElementById('photoAnalyzeBtn');
+  errEl.style.display = 'none';
+  if(!fileInput.files[0]){ errEl.textContent = 'Önce bir fotoğraf seç/çek.'; errEl.style.display='block'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Analiz ediliyor...';
+  try{
+    const file = fileInput.files[0];
+    const base64 = await fileToBase64(file);
+    const res = await fetch('/api/analyze-photo', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ imageBase64: base64, mediaType: file.type || 'image/jpeg' })
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    document.getElementById('photoName').value = data.name || '';
+    document.getElementById('photoCategory').value = CATEGORIES.includes(data.category) ? data.category : 'Diğer';
+    if(data.detectedPrice) document.getElementById('photoBasePrice').value = data.detectedPrice;
+    window._photoImageDataUrl = document.getElementById('photoPreview').src;
+    document.getElementById('photoResultBox').style.display = 'block';
+  }catch(err){
+    errEl.textContent = 'Analiz başarısız: ' + err.message;
+    errEl.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Fotoğrafı Analiz Et';
+  }
+}
+
+function savePhotoProduct(){
+  const name = document.getElementById('photoName').value.trim();
+  const category = document.getElementById('photoCategory').value;
+  const kdv = Number(document.getElementById('photoKdv').value) || 0;
+  const iskonto = Number(document.getElementById('photoIskonto').value) || 0;
+  const basePrice = Number(document.getElementById('photoBasePrice').value) || 0;
+  if(!name){ alert('Ürün adı gerekli.'); return; }
+  let final = basePrice * (1 + kdv/100) * (1 - iskonto/100);
+  final = final < 100 ? Math.ceil(final) : Math.ceil(final/10)*10;
+  addProducts([{ name, category, basePrice, finalPrice: final, image: window._photoImageDataUrl || null }]);
+  document.getElementById('photoResultBox').style.display = 'none';
+  document.getElementById('photoPreview').style.display = 'none';
+  document.getElementById('photoFile').value = '';
+  alert('Stoğa eklendi: ' + name);
+}
+
+/* ---------- BARKOD ---------- */
+function lookupBarcode(){
+  const code = document.getElementById('barcodeInput').value.trim();
+  const box = document.getElementById('barcodeResult');
+  if(!code){ box.innerHTML = '<div class="small-muted">Bir barkod numarası yaz.</div>'; return; }
+  const found = loadStock().find(p => p.barcode === code);
+  if(found){
+    box.innerHTML = `
+      <div class="product-row">
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:13px;">${esc(found.name)}</div>
+          <div class="small-muted"><span class="chip">${esc(found.category)}</span></div>
+        </div>
+        <div style="font-weight:800;">${money(found.finalPrice||found.basePrice||0)}₺</div>
+      </div>`;
+  } else {
+    box.innerHTML = `
+      <div class="small-muted" style="margin-bottom:10px;">Bu barkod stokta yok. Yeni ürün olarak eklemek ister misin?</div>
+      <input class="field" id="newBarcodeName" type="text" placeholder="Ürün adı">
+      <select class="field" id="newBarcodeCategory">${CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+      <input class="field" id="newBarcodePrice" type="number" placeholder="Fiyat (₺)">
+      <button class="btn-primary" onclick="saveNewBarcodeProduct('${esc(code)}')">Stoğa Ekle</button>`;
+  }
+}
+function saveNewBarcodeProduct(code){
+  const name = document.getElementById('newBarcodeName').value.trim();
+  const category = document.getElementById('newBarcodeCategory').value;
+  const price = Number(document.getElementById('newBarcodePrice').value) || 0;
+  if(!name){ alert('Ürün adı gerekli.'); return; }
+  addProducts([{ name, category, basePrice: price, finalPrice: price, barcode: code }]);
+  document.getElementById('barcodeResult').innerHTML = '<div class="small-muted">✓ Kaydedildi.</div>';
+  document.getElementById('barcodeInput').value = '';
+}
+
+/* ---------- ÜRÜN FİYATI BUL ---------- */
+let findPriceHistory = [];
+function renderFindPriceMsgs(){
+  document.getElementById('findPriceMsgs').innerHTML = findPriceHistory.map(m => `
+    <div class="chat-bubble-msg ${m.role==='user'?'chat-me':'chat-them'}" style="align-self:${m.role==='user'?'flex-end':'flex-start'};">${esc(typeof m.content==='string'?m.content:'')}</div>`).join('');
+}
+async function sendFindPrice(){
+  const input = document.getElementById('findPriceInput');
+  const q = input.value.trim();
+  if(!q) return;
+  findPriceHistory.push({role:'user', content:q});
+  renderFindPriceMsgs();
+  input.value = '';
+  const thinkingIdx = findPriceHistory.length;
+  findPriceHistory.push({role:'assistant', content:'...'});
+  renderFindPriceMsgs();
+  try{
+    const res = await fetch('/api/find-price', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ query: q, stock: loadStock(), history: findPriceHistory.slice(0, thinkingIdx) })
+    });
+    const data = await res.json();
+    findPriceHistory[thinkingIdx] = { role:'assistant', content: data.reply || data.error || 'Yanıt alınamadı.' };
+  }catch(err){
+    findPriceHistory[thinkingIdx] = { role:'assistant', content: 'Bağlantı hatası: ' + err.message };
+  }
+  renderFindPriceMsgs();
+}
+document.getElementById('findPriceInput').addEventListener('keydown', e => { if(e.key==='Enter') sendFindPrice(); });
+
+/* ---------- AI SOHBET BALONU ---------- */
+let chatHistory = [];
+function openChat(){ document.getElementById('chatPanel').classList.add('active'); }
+function closeChat(){ document.getElementById('chatPanel').classList.remove('active'); }
+function renderChatMsgs(){
+  document.getElementById('chatMsgs').innerHTML = chatHistory.map(m => `
+    <div class="chat-bubble-msg ${m.role==='user'?'chat-me':'chat-them'}">${esc(typeof m.content==='string'?m.content:'')}</div>`).join('');
+  const box = document.getElementById('chatMsgs');
+  box.scrollTop = box.scrollHeight;
+}
+async function sendChat(){
+  const input = document.getElementById('chatInput');
+  const q = input.value.trim();
+  if(!q) return;
+  chatHistory.push({role:'user', content:q});
+  renderChatMsgs();
+  input.value = '';
+  const thinkingIdx = chatHistory.length;
+  chatHistory.push({role:'assistant', content:'...'});
+  renderChatMsgs();
+  try{
+    const res = await fetch('/api/ai-chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ messages: chatHistory.slice(0, thinkingIdx), stock: loadStock() })
+    });
+    const data = await res.json();
+    chatHistory[thinkingIdx] = { role:'assistant', content: data.reply || data.error || 'Yanıt alınamadı.' };
+  }catch(err){
+    chatHistory[thinkingIdx] = { role:'assistant', content: 'Bağlantı hatası: ' + err.message };
+  }
+  renderChatMsgs();
+}
+document.getElementById('chatInput').addEventListener('keydown', e => { if(e.key==='Enter') sendChat(); });
+
+/* ---------- INIT ---------- */
+updateStockCount();
+chatHistory.push({role:'assistant', content:'Merhaba! Ben İmsaApp asistanınım. Stok, fiyat ya da genel bir konuda sorabilirsin.'});
+renderChatMsgs();
+</script>
+</body>
+</html>
