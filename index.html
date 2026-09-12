@@ -63,7 +63,7 @@
   .back-row h2{font-size:20px;}
 
   label{display:block;font-size:13px;color:var(--sub);margin:12px 0 6px;font-weight:500;}
-  input[type=text],input[type=number],select,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--panel);color:var(--ink);}
+  input[type=text],input[type=number],input[type=url],select,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--panel);color:var(--ink);}
   textarea{resize:vertical;min-height:70px;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 18px;border-radius:12px;border:none;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:16px;}
@@ -219,12 +219,74 @@
   <div class="screen" id="screen-pdf">
     <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>PDF ile stok yükle</h2></div>
     <div id="pdf-resume-banner" style="display:none;"></div>
-    <div class="dropzone" id="pdf-drop" onclick="document.getElementById('pdf-file').click()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      <div id="pdf-drop-label">Fiyat listesi PDF'ini seçmek için dokun</div>
+
+    <!-- KAYNAK SEÇİCİ SEKMELER -->
+    <div style="display:flex;gap:6px;margin-bottom:14px;background:var(--panel);padding:4px;border-radius:12px;border:1px solid var(--line);">
+      <button type="button" id="tab-pdf-url-btn" onclick="switchPdfSource('url')" style="flex:1;padding:10px 12px;border-radius:9px;border:none;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;">
+        <span>🔗</span>
+        <span>Web PDF Linki</span>
+      </button>
+      <button type="button" id="tab-pdf-file-btn" onclick="switchPdfSource('file')" style="flex:1;padding:10px 12px;border-radius:9px;border:none;background:transparent;color:var(--sub);font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;">
+        <span>📁</span>
+        <span>Dosya Seç</span>
+      </button>
     </div>
-    <input type="file" id="pdf-file" accept="application/pdf" style="display:none" onchange="handlePdfFile(event)">
-    <div id="pdf-status" class="hint"></div>
+
+    <!-- 1. PDF LİNKİ GİRİŞ ALANI -->
+    <div id="pdf-url-container" class="card" style="margin-bottom:12px;">
+      <label style="margin-top:0;">Web PDF Bağlantısı (URL)</label>
+      <div style="display:flex;gap:8px;">
+        <input type="url" id="pdf-url-input" placeholder="https://ornek.com/katalog.pdf" style="flex:1;font-size:13.5px;" oninput="onPdfUrlChanged()">
+        <button type="button" class="btn" onclick="checkPdfPageCount()" style="width:auto;margin:0;padding:0 14px;background:var(--blue-bg);color:var(--blue);border:1px solid var(--line);font-size:12.5px;font-weight:600;white-space:nowrap;">
+          Bilgi Al
+        </button>
+      </div>
+      <div id="pdf-url-info" class="hint" style="margin-top:6px;font-size:12px;">
+        120 MB gibi büyük katalogları bilgisayara indirmeden doğrudan linkten taratabilirsiniz.
+      </div>
+    </div>
+
+    <!-- 2. DOSYA YÜKLEME ALANI -->
+    <div id="pdf-file-container" style="display:none;margin-bottom:12px;">
+      <div class="dropzone" id="pdf-drop" onclick="document.getElementById('pdf-file').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div id="pdf-drop-label">Fiyat listesi PDF'ini seçmek için dokun</div>
+      </div>
+      <input type="file" id="pdf-file" accept="application/pdf" style="display:none" onchange="onPdfFileSelected(event)">
+    </div>
+
+    <!-- SAYFA ARALIĞI SEÇİMİ (HER İKİ SEÇENEKTE DE ÇALIŞIR) -->
+    <div class="card" style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div style="font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:6px;">
+          <span>📑</span>
+          <span>Taranacak Sayfa Aralığı</span>
+        </div>
+        <span id="pdf-total-badge" style="display:none;font-size:11px;font-weight:600;background:var(--teal-bg);color:var(--teal);padding:2px 8px;border-radius:10px;">
+          Toplam: - sayfa
+        </span>
+      </div>
+      <div class="row2">
+        <div>
+          <label style="margin-top:2px;">Başlangıç Sayfası</label>
+          <input type="number" id="pdf-page-start" value="1" min="1">
+        </div>
+        <div>
+          <label style="margin-top:2px;">Bitiş Sayfası</label>
+          <input type="number" id="pdf-page-end" placeholder="Tümü veya örn: 10" min="1">
+        </div>
+      </div>
+      <div class="hint" style="margin-top:6px;font-size:11.5px;">
+        💡 Büyük katalogların tamamını beklemek yerine ilgilendiğin sayfaları (örn. 10 ile 20 arası) seçerek hızlıca tarayabilirsin.
+      </div>
+    </div>
+
+    <!-- TARAMAYI BAŞLAT BUTONU -->
+    <button class="btn btn-primary" id="btn-start-pdf-scan" onclick="startPdfProcessing()" style="margin-top:0;margin-bottom:12px;">
+      🚀 PDF'i Oku ve Taramayı Başlat
+    </button>
+
+    <div id="pdf-status" class="hint" style="margin-bottom:12px;"></div>
     <div id="pdf-config" style="display:none">
       <div class="divider"></div>
       <div class="row2">
@@ -939,69 +1001,226 @@ async function runSearch(){
 // ---- PDF flow ----
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 let pdfExtractedItems = [];
-async function handlePdfFile(e){
-  const file = e.target.files[0]; if(!file) return;
-  const statusEl = document.getElementById('pdf-status');
-  statusEl.textContent = 'PDF okunuyor...';
-  document.getElementById('pdf-drop-label').textContent = file.name;
-  try{
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
-    statusEl.textContent = 'PDF sayfaları ve görseller okunuyor...';
-    const chunks = [];
-    for(let i=1;i<=pdf.numPages;i++){
-      const page = await pdf.getPage(i);
-      const text = await extractPageLayoutText(page);
-      let images = [];
-      let renderedPage = null;
-      let fullPageImg = null;
-      try{ fullPageImg = await renderPageToImage(page); }catch(e5){}
-      try{ images = await extractPageImages(page); }catch(e3){}
-      const digitCount = (text.match(/\d/g)||[]).length;
-      if(text.trim().length < 40 || digitCount < 6){
-        renderedPage = fullPageImg;
-      }
-      if(text.trim() || renderedPage) chunks.push({ text, images, renderedPage });
-      statusEl.textContent = `PDF sayfaları okunuyor... (${i}/${pdf.numPages})`;
-    }
+let selectedPdfSource = 'url';
+let selectedPdfFileObj = null;
+let cachedPdfDoc = null;
+let cachedPdfSourceKey = '';
 
-    statusEl.textContent = 'Bu listenin ürün grubu tespit ediliyor...';
-    let detectedSub = 'Diğer';
-    try{
-      const firstText = (chunks[0] && chunks[0].text) || '';
-      const resp = await callClaude([{role:'user', content: `Aşağıdaki metin bir ürün/fiyat listesinin başlangıcı. Bu listenin tamamının ait olduğu TEK bir alt kategori/malzeme grubu ismini belirle (örnek: Kaplin, PPRC Ek Parçalar, UPVC Boru, Vanalar). SADECE JSON döndür: {"altKategori":"..."}\n\nMetin:\n${firstText.slice(0,1500)}`}], 200);
-      const d = parseJsonLoose(resp);
-      detectedSub = d.altKategori || 'Diğer';
-    }catch(e2){}
-
-    const tree = await getCategoryTree();
-    let existingMain = null, existingSubExact = detectedSub;
-    for(const main of Object.keys(tree)){
-      for(const sub of Object.keys(tree[main])){
-        if(sub.toLowerCase() === detectedSub.toLowerCase()){ existingMain = main; existingSubExact = sub; break; }
-      }
-      if(existingMain) break;
-    }
-
-    const startJob = (fixedMain, seedSub) => {
-      const job = { fileName: file.name, chunks, nextIndex:0, fixedMain, currentSub: seedSub, usedType: [], items: [], failedChunks:0 };
-      saveJobProgress(job);
-      document.getElementById('pdf-resume-banner').style.display='none';
-      processPdfChunks(job);
-    };
-
-    if(existingMain){
-      statusEl.textContent = `"${existingSubExact}" zaten "${existingMain}" altında kayıtlı, oraya eklenecek...`;
-      startJob(existingMain, existingSubExact);
-    } else {
-      showCategoryPickModal(Object.keys(tree), detectedSub, (chosenMain)=>{
-        startJob(chosenMain, detectedSub);
-      });
-    }
-  }catch(err){
-    statusEl.innerHTML = '<span class="err">Bir hata oluştu: '+escapeHtml(err.message)+'</span>';
+function switchPdfSource(source){
+  selectedPdfSource = source;
+  const urlBtn = document.getElementById('tab-pdf-url-btn');
+  const fileBtn = document.getElementById('tab-pdf-file-btn');
+  const urlBox = document.getElementById('pdf-url-container');
+  const fileBox = document.getElementById('pdf-file-container');
+  
+  if(source === 'url'){
+    if(urlBtn){ urlBtn.style.background = 'var(--accent)'; urlBtn.style.color = 'var(--accent-ink)'; }
+    if(fileBtn){ fileBtn.style.background = 'transparent'; fileBtn.style.color = 'var(--sub)'; }
+    if(urlBox) urlBox.style.display = 'block';
+    if(fileBox) fileBox.style.display = 'none';
+  } else {
+    if(fileBtn){ fileBtn.style.background = 'var(--accent)'; fileBtn.style.color = 'var(--accent-ink)'; }
+    if(urlBtn){ urlBtn.style.background = 'transparent'; urlBtn.style.color = 'var(--sub)'; }
+    if(fileBox) fileBox.style.display = 'block';
+    if(urlBox) urlBox.style.display = 'none';
   }
 }
+
+function onPdfUrlChanged(){
+  cachedPdfDoc = null;
+  cachedPdfSourceKey = '';
+  const badge = document.getElementById('pdf-total-badge');
+  if(badge) badge.style.display = 'none';
+}
+
+function onPdfFileSelected(e){
+  const file = e && e.target && e.target.files && e.target.files[0];
+  if(!file) return;
+  selectedPdfFileObj = file;
+  cachedPdfDoc = null;
+  cachedPdfSourceKey = '';
+  const dropLabel = document.getElementById('pdf-drop-label');
+  if(dropLabel){
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    dropLabel.textContent = `${file.name} (${sizeMb} MB)`;
+  }
+  checkPdfPageCount();
+}
+
+function handlePdfFile(e){
+  onPdfFileSelected(e);
+}
+
+async function loadPdfFromUrl(url, onStatus){
+  // 1. Önce doğrudan PDF.js ile dene (CORS destekliyorsa range-request ile streaming yapar)
+  try{
+    if(onStatus) onStatus('Doğrudan bağlantı kuruluyor...');
+    const task = pdfjsLib.getDocument({ url: url, withCredentials: false });
+    const doc = await task.promise;
+    return doc;
+  }catch(e1){
+    console.warn('Doğrudan PDF açma CORS veya ağ engeline takıldı, proxy ile deneniyor...', e1);
+  }
+
+  // 2. CORS Proxy alternatifleri
+  const proxies = [
+    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+  ];
+
+  for(const getProxyUrl of proxies){
+    try{
+      if(onStatus) onStatus('Güvenli proxy ile bağlanılıyor...');
+      const proxyUrl = getProxyUrl(url);
+      const resp = await fetch(proxyUrl);
+      if(!resp.ok) continue;
+      const buf = await resp.arrayBuffer();
+      const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+      return doc;
+    }catch(e2){
+      console.warn('Proxy hatası:', e2);
+    }
+  }
+
+  throw new Error('PDF linkine erişilemedi. Lütfen linkin doğrudan açılabilir bir PDF adresi olduğunu kontrol edin.');
+}
+
+async function getOrLoadPdfDoc(onStatus){
+  if(selectedPdfSource === 'url'){
+    const urlInput = document.getElementById('pdf-url-input');
+    const url = (urlInput ? urlInput.value : '').trim();
+    if(!url) throw new Error('Lütfen bir PDF bağlantısı (URL) girin.');
+    if(cachedPdfDoc && cachedPdfSourceKey === url) return { pdfDoc: cachedPdfDoc, docName: url.split('/').pop().split('?')[0] || 'Katalog.pdf' };
+    const doc = await loadPdfFromUrl(url, onStatus);
+    cachedPdfDoc = doc;
+    cachedPdfSourceKey = url;
+    return { pdfDoc: doc, docName: url.split('/').pop().split('?')[0] || 'Katalog.pdf' };
+  } else {
+    if(!selectedPdfFileObj) throw new Error('Lütfen bir PDF dosyası seçin.');
+    const key = selectedPdfFileObj.name + '_' + selectedPdfFileObj.size;
+    if(cachedPdfDoc && cachedPdfSourceKey === key) return { pdfDoc: cachedPdfDoc, docName: selectedPdfFileObj.name };
+    if(onStatus) onStatus('Dosya okunuyor...');
+    const buf = await selectedPdfFileObj.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+    cachedPdfDoc = doc;
+    cachedPdfSourceKey = key;
+    return { pdfDoc: doc, docName: selectedPdfFileObj.name };
+  }
+}
+
+async function checkPdfPageCount(){
+  const statusEl = document.getElementById('pdf-status');
+  const badge = document.getElementById('pdf-total-badge');
+  const endInput = document.getElementById('pdf-page-end');
+  try{
+    statusEl.textContent = 'Katalog bilgileri alınıyor...';
+    const { pdfDoc } = await getOrLoadPdfDoc((msg) => { statusEl.textContent = msg; });
+    const total = pdfDoc.numPages;
+    if(badge){
+      badge.textContent = `Toplam: ${total} sayfa`;
+      badge.style.display = 'inline-block';
+    }
+    if(endInput && (!endInput.value || parseInt(endInput.value,10) > total)){
+      endInput.value = total > 20 ? 10 : total;
+    }
+    statusEl.innerHTML = `✅ <b>Toplam ${total} sayfa</b> bulundu. İlgilendiğiniz sayfa aralığını seçip taramayı başlatabilirsiniz.`;
+  }catch(err){
+    statusEl.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`;
+  }
+}
+
+async function startPdfProcessing(){
+  const statusEl = document.getElementById('pdf-status');
+  statusEl.innerHTML = '';
+  try{
+    statusEl.textContent = 'PDF hazırlanıyor...';
+    const { pdfDoc, docName } = await getOrLoadPdfDoc((msg) => { statusEl.textContent = msg; });
+    
+    const totalPages = pdfDoc.numPages;
+    const startInput = document.getElementById('pdf-page-start');
+    const endInput = document.getElementById('pdf-page-end');
+    
+    let startPage = parseInt(startInput ? startInput.value : '1', 10) || 1;
+    let endPage = parseInt(endInput ? endInput.value : '', 10) || totalPages;
+    
+    if(startPage < 1) startPage = 1;
+    if(startPage > totalPages) startPage = totalPages;
+    if(endPage < startPage) endPage = startPage;
+    if(endPage > totalPages) endPage = totalPages;
+
+    const badge = document.getElementById('pdf-total-badge');
+    if(badge){
+      badge.textContent = `Toplam: ${totalPages} sayfa`;
+      badge.style.display = 'inline-block';
+    }
+
+    await runPdfExtraction(pdfDoc, docName, startPage, endPage);
+  }catch(err){
+    statusEl.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`;
+  }
+}
+
+async function runPdfExtraction(pdf, docName, startPage, endPage){
+  const statusEl = document.getElementById('pdf-status');
+  const chunks = [];
+  const totalSelected = (endPage - startPage + 1);
+
+  for(let i = startPage; i <= endPage; i++){
+    statusEl.textContent = `PDF sayfası okunuyor: ${i} / ${endPage} (Seçilen ${totalSelected} sayfa)...`;
+    const page = await pdf.getPage(i);
+    const text = await extractPageLayoutText(page);
+    let images = [];
+    let renderedPage = null;
+    let fullPageImg = null;
+    try{ fullPageImg = await renderPageToImage(page); }catch(e5){}
+    try{ images = await extractPageImages(page); }catch(e3){}
+    const digitCount = (text.match(/\d/g)||[]).length;
+    if(text.trim().length < 40 || digitCount < 6){
+      renderedPage = fullPageImg;
+    }
+    if(text.trim() || renderedPage) chunks.push({ text, images, renderedPage, pageNum: i });
+  }
+
+  if(chunks.length === 0){
+    statusEl.innerHTML = '<span class="err">Seçilen sayfalarda taranacak içerik bulunamadı.</span>';
+    return;
+  }
+
+  statusEl.textContent = 'Bu listenin ürün grubu tespit ediliyor...';
+  let detectedSub = 'Diğer';
+  try{
+    const firstText = (chunks[0] && chunks[0].text) || '';
+    const resp = await callClaude([{role:'user', content: `Aşağıdaki metin bir ürün/fiyat listesinin başlangıcı. Bu listenin tamamının ait olduğu TEK bir alt kategori/malzeme grubu ismini belirle (örnek: Kaplin, PPRC Ek Parçalar, UPVC Boru, Vanalar). SADECE JSON döndür: {"altKategori":"..."}\n\nMetin:\n${firstText.slice(0,1500)}`}], 200);
+    const d = parseJsonLoose(resp);
+    detectedSub = d.altKategori || 'Diğer';
+  }catch(e2){}
+
+  const tree = await getCategoryTree();
+  let existingMain = null, existingSubExact = detectedSub;
+  for(const main of Object.keys(tree)){
+    for(const sub of Object.keys(tree[main])){
+      if(sub.toLowerCase() === detectedSub.toLowerCase()){ existingMain = main; existingSubExact = sub; break; }
+    }
+    if(existingMain) break;
+  }
+
+  const startJob = (fixedMain, seedSub) => {
+    const job = { fileName: `${docName} (s.${startPage}-${endPage})`, chunks, nextIndex:0, fixedMain, currentSub: seedSub, usedType: [], items: [], failedChunks:0 };
+    saveJobProgress(job);
+    document.getElementById('pdf-resume-banner').style.display='none';
+    processPdfChunks(job);
+  };
+
+  if(existingMain){
+    statusEl.textContent = `"${existingSubExact}" zaten "${existingMain}" altında kayıtlı, oraya eklenecek...`;
+    startJob(existingMain, existingSubExact);
+  } else {
+    showCategoryPickModal(Object.keys(tree), detectedSub, (chosenMain)=>{
+      startJob(chosenMain, detectedSub);
+    });
+  }
+}
+
 function buildMatrixInstructions(extra){
   return `ÖNEMLİ - ÜÇ FARKLI FORMAT OLABİLİR:
 1) Düz liste: her satırda/görselde bir ürün adı ve bir fiyat vardır. Bu durumda her satır/ürün = bir kayıt.
