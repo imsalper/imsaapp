@@ -488,24 +488,30 @@ function resizeDataUrl(dataUrl, maxDim, quality){
 function imageObjToDataUrl(imgObj){
   return new Promise((resolve)=>{
     try{
-      if(!imgObj || !imgObj.width || !imgObj.height){ resolve(null); return; }
+      if(!imgObj){ resolve(null); return; }
+      const directBitmap = (typeof ImageBitmap !== 'undefined' && imgObj instanceof ImageBitmap) ? imgObj : null;
+      const w = imgObj.width || (directBitmap && directBitmap.width);
+      const h = imgObj.height || (directBitmap && directBitmap.height);
+      if(!w || !h){ resolve(null); return; }
       const maxDim = 160;
-      const scale = Math.min(1, maxDim / Math.max(imgObj.width, imgObj.height));
+      const scale = Math.min(1, maxDim / Math.max(w, h));
       const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(imgObj.width*scale));
-      canvas.height = Math.max(1, Math.round(imgObj.height*scale));
+      canvas.width = Math.max(1, Math.round(w*scale));
+      canvas.height = Math.max(1, Math.round(h*scale));
       const ctx = canvas.getContext('2d');
-      if(imgObj.bitmap){
+      if(directBitmap){
+        ctx.drawImage(directBitmap, 0, 0, canvas.width, canvas.height);
+      } else if(imgObj.bitmap){
         ctx.drawImage(imgObj.bitmap, 0, 0, canvas.width, canvas.height);
       } else if(imgObj.data){
         const tmp = document.createElement('canvas');
-        tmp.width = imgObj.width; tmp.height = imgObj.height;
+        tmp.width = w; tmp.height = h;
         const tctx = tmp.getContext('2d');
-        const idata = tctx.createImageData(imgObj.width, imgObj.height);
+        const idata = tctx.createImageData(w, h);
         const src = imgObj.data;
-        if(src.length === imgObj.width*imgObj.height*4){
+        if(src.length === w*h*4){
           idata.data.set(src);
-        } else if(src.length === imgObj.width*imgObj.height*3){
+        } else if(src.length === w*h*3){
           for(let p=0, q=0; p<src.length; p+=3, q+=4){
             idata.data[q]=src[p]; idata.data[q+1]=src[p+1]; idata.data[q+2]=src[p+2]; idata.data[q+3]=255;
           }
@@ -845,10 +851,12 @@ async function handlePdfFile(e){
       const text = await extractPageLayoutText(page);
       let images = [];
       let renderedPage = null;
+      let fullPageImg = null;
+      try{ fullPageImg = await renderPageToImage(page); }catch(e5){}
       try{ images = await extractPageImages(page); }catch(e3){}
       const digitCount = (text.match(/\d/g)||[]).length;
       if(text.trim().length < 40 || digitCount < 6){
-        try{ renderedPage = await renderPageToImage(page); }catch(e4){}
+        renderedPage = fullPageImg;
       }
       if(text.trim() || renderedPage) chunks.push({ text, images, renderedPage });
       statusEl.textContent = `PDF sayfaları okunuyor... (${i}/${pdf.numPages})`;
