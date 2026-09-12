@@ -141,6 +141,9 @@
   .api-paste-btn{position:absolute;right:6px;top:6px;bottom:6px;padding:0 12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;}
   .share-link-box{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:12px;font-size:12px;word-break:break-all;display:none;}
 
+
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  .spinner-rotate { animation: spin 0.8s linear infinite; }
 </style>
 </head>
 <body>
@@ -285,6 +288,32 @@
     <button class="btn btn-primary" id="btn-start-pdf-scan" onclick="startPdfProcessing()" style="margin-top:0;margin-bottom:12px;">
       🚀 PDF'i Oku ve Taramayı Başlat
     </button>
+
+    <!-- CANLI İLERLEME VE DURDURMA ALANI (PROGRESS & STOP) -->
+    <div id="pdf-progress-card" class="card" style="display:none;margin-bottom:14px;border:1.5px solid var(--accent);background:var(--panel);box-shadow:0 4px 14px rgba(219,107,34,0.12);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:18px;height:18px;border:2.5px solid var(--line);border-top-color:var(--accent);border-radius:50%;" class="spinner-rotate"></div>
+          <span id="pdf-progress-title" style="font-weight:700;font-size:13.5px;color:var(--ink);">İşlem Yapılıyor...</span>
+        </div>
+        <span id="pdf-progress-percent" style="font-weight:800;font-size:13px;color:var(--accent);background:var(--amber-bg);padding:2px 8px;border-radius:8px;">%0</span>
+      </div>
+
+      <!-- Yüzde İlerleme Çubuğu -->
+      <div style="width:100%;height:9px;background:var(--line);border-radius:6px;overflow:hidden;margin-bottom:8px;">
+        <div id="pdf-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg, var(--accent), #f59e0b);transition:width 0.15s ease;border-radius:6px;"></div>
+      </div>
+
+      <div id="pdf-progress-detail" class="hint" style="font-size:12px;color:var(--sub);margin-bottom:12px;word-break:break-word;">
+        Bağlantı kuruluyor...
+      </div>
+
+      <!-- İŞLEMİ DURDUR BUTONU -->
+      <button type="button" id="btn-cancel-pdf" onclick="cancelPdfScan()" style="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--danger);background:#FFF2F0;color:var(--danger);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        <span>İşlemi Durdur / İptal Et</span>
+      </button>
+    </div>
 
     <div id="pdf-status" class="hint" style="margin-bottom:12px;"></div>
     <div id="pdf-config" style="display:none">
@@ -1006,6 +1035,60 @@ let selectedPdfFileObj = null;
 let cachedPdfDoc = null;
 let cachedPdfSourceKey = '';
 
+// İptal ve Canlı İlerleme Kontrolleri
+let isPdfScanCancelled = false;
+let pdfAbortController = null;
+let currentPdfTask = null;
+
+function setPdfProgressUI(title, percent, detailText){
+  const card = document.getElementById('pdf-progress-card');
+  const titleEl = document.getElementById('pdf-progress-title');
+  const pctBadge = document.getElementById('pdf-progress-percent');
+  const bar = document.getElementById('pdf-progress-bar');
+  const detailEl = document.getElementById('pdf-progress-detail');
+
+  if(card) card.style.display = 'block';
+  if(titleEl && title) titleEl.textContent = title;
+  if(pctBadge){
+    if(percent !== null && percent !== undefined){
+      pctBadge.textContent = `%${percent}`;
+      pctBadge.style.display = 'inline-block';
+    } else {
+      pctBadge.style.display = 'none';
+    }
+  }
+  if(bar){
+    if(percent !== null && percent !== undefined){
+      bar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+    } else {
+      bar.style.width = '100%';
+    }
+  }
+  if(detailEl && detailText) detailEl.textContent = detailText;
+}
+
+function hidePdfProgressUI(){
+  const card = document.getElementById('pdf-progress-card');
+  if(card) card.style.display = 'none';
+}
+
+function cancelPdfScan(){
+  isPdfScanCancelled = true;
+  if(pdfAbortController){
+    try{ pdfAbortController.abort(); }catch(e){}
+    pdfAbortController = null;
+  }
+  if(currentPdfTask){
+    try{ currentPdfTask.destroy(); }catch(e){}
+    currentPdfTask = null;
+  }
+  hidePdfProgressUI();
+  const statusEl = document.getElementById('pdf-status');
+  if(statusEl){
+    statusEl.innerHTML = '<span style="color:var(--danger);font-weight:700;">🛑 İşlem kullanıcı tarafından durduruldu.</span>';
+  }
+}
+
 function switchPdfSource(source){
   selectedPdfSource = source;
   const urlBtn = document.getElementById('tab-pdf-url-btn');
@@ -1051,47 +1134,121 @@ function handlePdfFile(e){
   onPdfFileSelected(e);
 }
 
-async function loadPdfFromUrl(url, onStatus){
-  // 1. Önce doğrudan PDF.js ile dene (CORS destekliyorsa range-request ile streaming yapar)
+// Canlı veri indirme ve yüzde sayacı (Stream Okuyucu)
+async function fetchStreamWithProgress(url, onProgress, signal){
+  const resp = await fetch(url, { signal });
+  if(!resp.ok) throw new Error(`HTTP ${resp.status} hatası: ${resp.statusText}`);
+  
+  const contentLength = resp.headers.get('content-length');
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+  
+  if(!resp.body){
+    const buf = await resp.arrayBuffer();
+    return buf;
+  }
+  
+  const reader = resp.body.getReader();
+  let received = 0;
+  const chunks = [];
+  
+  while(true){
+    if(isPdfScanCancelled){
+      try { reader.cancel(); }catch(e){}
+      throw new Error('İşlem kullanıcı tarafından durduruldu.');
+    }
+    const { done, value } = await reader.read();
+    if(done) break;
+    chunks.push(value);
+    received += value.length;
+    if(onProgress){
+      onProgress(received, total);
+    }
+  }
+  
+  const allBytes = new Uint8Array(received);
+  let offset = 0;
+  for(const c of chunks){
+    allBytes.set(c, offset);
+    offset += c.length;
+  }
+  return allBytes.buffer;
+}
+
+async function loadPdfFromUrl(url){
+  isPdfScanCancelled = false;
+  pdfAbortController = new AbortController();
+
+  // 1. Önce doğrudan PDF.js ile bağlantıyı dene (sunucu CORS destekliyorsa anlık streaming yapar)
   try{
-    if(onStatus) onStatus('Doğrudan bağlantı kuruluyor...');
+    setPdfProgressUI('Doğrudan Bağlantı Kuruluyor...', null, 'Web sunucusuna bağlanılıyor...');
     const task = pdfjsLib.getDocument({ url: url, withCredentials: false });
+    currentPdfTask = task;
+    task.onProgress = function(p){
+      if(isPdfScanCancelled){ try{ task.destroy(); }catch(e){} return; }
+      if(p.total > 0){
+        const pct = Math.min(99, Math.round((p.loaded / p.total) * 100));
+        setPdfProgressUI(`Doğrudan İndiriliyor (%${pct})`, pct, `${(p.loaded/1048576).toFixed(1)} MB / ${(p.total/1048576).toFixed(1)} MB`);
+      } else {
+        setPdfProgressUI(`Doğrudan İndiriliyor...`, null, `${(p.loaded/1048576).toFixed(1)} MB aktarıldı`);
+      }
+    };
     const doc = await task.promise;
+    currentPdfTask = null;
     return doc;
   }catch(e1){
-    console.warn('Doğrudan PDF açma CORS veya ağ engeline takıldı, proxy ile deneniyor...', e1);
+    if(isPdfScanCancelled) throw new Error('İşlem durduruldu.');
+    console.warn('Doğrudan PDF açma CORS veya ağ engeline takıldı, güvenli proxy deneniyor...', e1);
   }
 
-  // 2. CORS Proxy alternatifleri
+  // 2. Güvenli Proxy Alternatifleri (Canlı İlerleme Sayacı ile)
   const proxies = [
+    (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
   ];
 
-  for(const getProxyUrl of proxies){
+  let lastProxyErr = null;
+  for(let pIdx = 0; pIdx < proxies.length; pIdx++){
+    if(isPdfScanCancelled) throw new Error('İşlem durduruldu.');
     try{
-      if(onStatus) onStatus('Güvenli proxy ile bağlanılıyor...');
-      const proxyUrl = getProxyUrl(url);
-      const resp = await fetch(proxyUrl);
-      if(!resp.ok) continue;
-      const buf = await resp.arrayBuffer();
-      const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+      const proxyUrl = proxies[pIdx](url);
+      setPdfProgressUI(`Güvenli Proxy ile Bağlanılıyor (${pIdx+1}/${proxies.length})...`, 2, 'Katalog verisi çekilmeye başlanıyor...');
+      
+      const buf = await fetchStreamWithProgress(proxyUrl, (received, total) => {
+        const mbReceived = (received / 1048576).toFixed(1);
+        if(total > 0){
+          const pct = Math.min(99, Math.round((received / total) * 100));
+          const mbTotal = (total / 1048576).toFixed(1);
+          setPdfProgressUI(`Güvenli Proxy İndiriyor (%${pct})`, pct, `${mbReceived} MB / ${mbTotal} MB indirildi (%${pct})`);
+        } else {
+          setPdfProgressUI(`Güvenli Proxy İndiriyor...`, null, `${mbReceived} MB veri okundu...`);
+        }
+      }, pdfAbortController.signal);
+
+      if(isPdfScanCancelled) throw new Error('İşlem durduruldu.');
+      setPdfProgressUI('PDF Ayrıştırılıyor...', 100, 'Katalog sayfaları hazırlanıyor...');
+      const task = pdfjsLib.getDocument({ data: buf });
+      currentPdfTask = task;
+      const doc = await task.promise;
+      currentPdfTask = null;
       return doc;
-    }catch(e2){
-      console.warn('Proxy hatası:', e2);
+    }catch(err){
+      if(isPdfScanCancelled) throw new Error('İşlem durduruldu.');
+      lastProxyErr = err;
+      console.warn(`Proxy ${pIdx+1} hatası:`, err);
     }
   }
 
-  throw new Error('PDF linkine erişilemedi. Lütfen linkin doğrudan açılabilir bir PDF adresi olduğunu kontrol edin.');
+  throw lastProxyErr || new Error('PDF linkine erişilemedi. Lütfen linkin doğrudan açılabilir bir PDF adresi olduğunu kontrol edin.');
 }
 
-async function getOrLoadPdfDoc(onStatus){
+async function getOrLoadPdfDoc(){
   if(selectedPdfSource === 'url'){
     const urlInput = document.getElementById('pdf-url-input');
     const url = (urlInput ? urlInput.value : '').trim();
     if(!url) throw new Error('Lütfen bir PDF bağlantısı (URL) girin.');
     if(cachedPdfDoc && cachedPdfSourceKey === url) return { pdfDoc: cachedPdfDoc, docName: url.split('/').pop().split('?')[0] || 'Katalog.pdf' };
-    const doc = await loadPdfFromUrl(url, onStatus);
+    const doc = await loadPdfFromUrl(url);
     cachedPdfDoc = doc;
     cachedPdfSourceKey = url;
     return { pdfDoc: doc, docName: url.split('/').pop().split('?')[0] || 'Katalog.pdf' };
@@ -1099,7 +1256,7 @@ async function getOrLoadPdfDoc(onStatus){
     if(!selectedPdfFileObj) throw new Error('Lütfen bir PDF dosyası seçin.');
     const key = selectedPdfFileObj.name + '_' + selectedPdfFileObj.size;
     if(cachedPdfDoc && cachedPdfSourceKey === key) return { pdfDoc: cachedPdfDoc, docName: selectedPdfFileObj.name };
-    if(onStatus) onStatus('Dosya okunuyor...');
+    setPdfProgressUI('Dosya Okunuyor...', 50, 'Seçilen dosya belleğe yükleniyor...');
     const buf = await selectedPdfFileObj.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
     cachedPdfDoc = doc;
@@ -1112,9 +1269,11 @@ async function checkPdfPageCount(){
   const statusEl = document.getElementById('pdf-status');
   const badge = document.getElementById('pdf-total-badge');
   const endInput = document.getElementById('pdf-page-end');
+  isPdfScanCancelled = false;
   try{
-    statusEl.textContent = 'Katalog bilgileri alınıyor...';
-    const { pdfDoc } = await getOrLoadPdfDoc((msg) => { statusEl.textContent = msg; });
+    statusEl.textContent = '';
+    const { pdfDoc } = await getOrLoadPdfDoc();
+    hidePdfProgressUI();
     const total = pdfDoc.numPages;
     if(badge){
       badge.textContent = `Toplam: ${total} sayfa`;
@@ -1125,16 +1284,20 @@ async function checkPdfPageCount(){
     }
     statusEl.innerHTML = `✅ <b>Toplam ${total} sayfa</b> bulundu. İlgilendiğiniz sayfa aralığını seçip taramayı başlatabilirsiniz.`;
   }catch(err){
-    statusEl.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`;
+    hidePdfProgressUI();
+    if(err.message !== 'İşlem durduruldu.'){
+      statusEl.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`;
+    }
   }
 }
 
 async function startPdfProcessing(){
   const statusEl = document.getElementById('pdf-status');
   statusEl.innerHTML = '';
+  isPdfScanCancelled = false;
   try{
-    statusEl.textContent = 'PDF hazırlanıyor...';
-    const { pdfDoc, docName } = await getOrLoadPdfDoc((msg) => { statusEl.textContent = msg; });
+    const { pdfDoc, docName } = await getOrLoadPdfDoc();
+    if(isPdfScanCancelled) return;
     
     const totalPages = pdfDoc.numPages;
     const startInput = document.getElementById('pdf-page-start');
@@ -1156,7 +1319,10 @@ async function startPdfProcessing(){
 
     await runPdfExtraction(pdfDoc, docName, startPage, endPage);
   }catch(err){
-    statusEl.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`;
+    hidePdfProgressUI();
+    if(err.message !== 'İşlem durduruldu.' && err.message !== 'İşlem kullanıcı tarafından durduruldu.'){
+      statusEl.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`;
+    }
   }
 }
 
@@ -1166,7 +1332,18 @@ async function runPdfExtraction(pdf, docName, startPage, endPage){
   const totalSelected = (endPage - startPage + 1);
 
   for(let i = startPage; i <= endPage; i++){
-    statusEl.textContent = `PDF sayfası okunuyor: ${i} / ${endPage} (Seçilen ${totalSelected} sayfa)...`;
+    if(isPdfScanCancelled) {
+      hidePdfProgressUI();
+      return;
+    }
+    const currentStep = (i - startPage + 1);
+    const pct = Math.round((currentStep / totalSelected) * 100);
+    setPdfProgressUI(
+      `Sayfa Okunuyor (${currentStep}/${totalSelected})`,
+      pct,
+      `Sayfa ${i} metinleri ve fotoğrafları ayıklanıyor (%${pct})...`
+    );
+
     const page = await pdf.getPage(i);
     const text = await extractPageLayoutText(page);
     let images = [];
@@ -1182,11 +1359,12 @@ async function runPdfExtraction(pdf, docName, startPage, endPage){
   }
 
   if(chunks.length === 0){
+    hidePdfProgressUI();
     statusEl.innerHTML = '<span class="err">Seçilen sayfalarda taranacak içerik bulunamadı.</span>';
     return;
   }
 
-  statusEl.textContent = 'Bu listenin ürün grubu tespit ediliyor...';
+  setPdfProgressUI('Ürün Grubu Belirleniyor...', 95, 'Kataloğun ait olduğu grup tespit ediliyor...');
   let detectedSub = 'Diğer';
   try{
     const firstText = (chunks[0] && chunks[0].text) || '';
@@ -1212,13 +1390,86 @@ async function runPdfExtraction(pdf, docName, startPage, endPage){
   };
 
   if(existingMain){
-    statusEl.textContent = `"${existingSubExact}" zaten "${existingMain}" altında kayıtlı, oraya eklenecek...`;
     startJob(existingMain, existingSubExact);
   } else {
+    hidePdfProgressUI();
     showCategoryPickModal(Object.keys(tree), detectedSub, (chosenMain)=>{
       startJob(chosenMain, detectedSub);
     });
   }
+}
+
+async function processPdfChunks(job){
+  const statusEl = document.getElementById('pdf-status');
+  const usedType = new Set(job.usedType || []);
+  let currentSub = job.currentSub || null;
+  let failedChunks = job.failedChunks || 0;
+
+  for(let idx=job.nextIndex; idx<job.chunks.length; idx++){
+    if(isPdfScanCancelled){
+      hidePdfProgressUI();
+      statusEl.innerHTML = `<span style="color:var(--danger);font-weight:700;">🛑 İşlem durduruldu.</span> Şu ana kadar bulunan <b>${job.items.length} ürün</b> hazırlandı. Aşağıdan oranları ayarlayıp listele.`;
+      if(job.items.length > 0){
+        pdfExtractedItems = job.items;
+        document.getElementById('pdf-config').style.display = 'block';
+      }
+      return;
+    }
+
+    const chunkData = job.chunks[idx];
+    const chunkText = (typeof chunkData === 'string') ? chunkData : (chunkData.text || '');
+    const chunkImages = (chunkData && chunkData.images) || [];
+    const renderedPage = chunkData && chunkData.renderedPage;
+
+    const pct = Math.round(((idx + 1) / job.chunks.length) * 100);
+    setPdfProgressUI(
+      `Yapay Zeka Taraması (%${pct})`,
+      pct,
+      `Sayfa ${idx+1} / ${job.chunks.length} taranıyor${renderedPage?' (Görsel OCR)':''} • Şu ana kadar ${job.items.length} ürün bulundu`
+    );
+
+    const subContext = `\n\nBir önceki parçadan devam eden bilinen ALT BAŞLIK: ${currentSub ? '"'+currentSub+'"' : 'yok (henüz belli değil)'}. Bu parçada YENİ bir alt başlık görüyorsan onu kullan ve döndür; görmüyorsan (yani bu parça önceki alt başlığın devamıysa) yukarıdaki bilinen alt başlığı aynen kullanmaya devam et.`;
+    const typeContext = usedType.size ? `\n\nŞu ana kadar kullanılan ürün tipi isimleri (uyan varsa AYNEN kullan, benzer ama farklı yazımlı yeni isim uydurma): ${Array.from(usedType).join(', ')}` : '';
+    const coreInstructions = buildMatrixInstructions(`\n${subContext}${typeContext}`) + ` SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catSub":"...","catType":"...","taban_fiyat":0}], "guncel_alt_baslik":"bu sayfanın sonunda geçerli olan alt başlık"}. Ürün yoksa items boş array olsun.`;
+    let messageContent;
+    if(renderedPage){
+      const mediaType = renderedPage.slice(5, renderedPage.indexOf(';'));
+      const base64Data = renderedPage.slice(renderedPage.indexOf(',')+1);
+      messageContent = [
+        {type:'image', source:{type:'base64', media_type: mediaType, data: base64Data}},
+        {type:'text', text: `Bu görsel, bir hırdavat/nalbur/tesisat fiyat listesi PDF sayfasının görüntüsüdür (muhtemelen taranmış/görsel bir tablo, gerçek metin katmanı yok). Görseldeki tüm tabloyu/listeyi dikkatlice oku.\n\n${coreInstructions}`}
+      ];
+    } else {
+      messageContent = `Aşağıda bir hırdavat/nalbur/tesisat fiyat listesi PDF'inin bir sayfasından çıkarılmış metin var. Metin, sayfadaki satır/sütun yapısını korumak için her satır yeni satırla, aynı satır içindeki sütunlar ise " | " işaretiyle ayrılmıştır.\n\n${coreInstructions}\n\nMetin:\n${chunkText}`;
+    }
+    try{
+      const resp = await callClaude([{role:'user', content: messageContent}], 8192);
+      const parsed = parsePdfChunkResponse(resp);
+      const items = parsed.items || [];
+      if(parsed.guncel_alt_baslik) currentSub = parsed.guncel_alt_baslik;
+      for(let ii=0; ii<items.length; ii++){
+        const it = items[ii];
+        it.catMain = job.fixedMain;
+        if(!it.catSub) it.catSub = currentSub || 'Diğer';
+        if(it.catType) usedType.add(it.catType);
+        if(chunkImages[ii]) it.image = chunkImages[ii];
+      }
+      job.items = job.items.concat(items);
+    }catch(chunkErr){
+      failedChunks++;
+    }
+    if(idx < job.chunks.length-1) await new Promise(r=>setTimeout(r, 2000));
+    job.nextIndex = idx+1;
+    job.currentSub = currentSub;
+    job.usedType = Array.from(usedType);
+    job.failedChunks = failedChunks;
+    saveJobProgress(job);
+  }
+
+  hidePdfProgressUI();
+  pdfExtractedItems = job.items;
+  statusEl.textContent = job.items.length+' ürün bulundu ('+job.chunks.length+' sayfanın tamamı tarandı)'+(failedChunks? ', '+failedChunks+' parça okunamadı':'')+'. Aşağıdan oranları ayarlayıp listele.';
+  document.getElementById('pdf-config').style.display = 'block';
 }
 
 function buildMatrixInstructions(extra){
