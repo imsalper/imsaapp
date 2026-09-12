@@ -489,6 +489,17 @@ function imageObjToDataUrl(imgObj){
     }catch(e){ resolve(null); }
   });
 }
+async function renderPageToImage(page){
+  const baseViewport = page.getViewport({scale:1});
+  const scale = Math.min(3, 1700/baseViewport.width);
+  const viewport = page.getViewport({scale});
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({canvasContext: ctx, viewport}).promise;
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
 async function extractPageLayoutText(page){
   const content = await page.getTextContent();
   const items = content.items
@@ -771,8 +782,14 @@ async function handlePdfFile(e){
       const page = await pdf.getPage(i);
       const text = await extractPageLayoutText(page);
       let images = [];
-      try{ images = await extractPageImages(page); }catch(e3){}
-      if(text.trim()) chunks.push({ text, images });
+      let renderedPage = null;
+      const digitCount = (text.match(/\d/g)||[]).length;
+      if(text.trim().length < 40 || digitCount < 6){
+        try{ renderedPage = await renderPageToImage(page); }catch(e4){}
+      } else {
+        try{ images = await extractPageImages(page); }catch(e3){}
+      }
+      if(text.trim() || renderedPage) chunks.push({ text, images, renderedPage });
       statusEl.textContent = `PDF sayfaları okunuyor... (${i}/${pdf.numPages})`;
     }
 
@@ -822,27 +839,34 @@ async function processPdfChunks(job){
     const chunkData = job.chunks[idx];
     const chunkText = (typeof chunkData === 'string') ? chunkData : (chunkData.text || '');
     const chunkImages = (chunkData && chunkData.images) || [];
-    statusEl.textContent = `Yapay zeka ürünleri ayıklıyor... (${idx+1}/${job.chunks.length} sayfa, şu ana kadar ${job.items.length} ürün)`;
-    const subContext = `\n\nBir önceki parçadan devam eden bilinen ALT BAŞLIK: ${currentSub ? '"'+currentSub+'"' : 'yok (henüz belli değil)'}. Bu parçada metnin başında YENİ bir alt başlık görüyorsan onu kullan ve döndür; görmüyorsan (yani bu parça önceki alt başlığın devamıysa) yukarıdaki bilinen alt başlığı aynen kullanmaya devam et.`;
+    const renderedPage = chunkData && chunkData.renderedPage;
+    statusEl.textContent = `Yapay zeka ürünleri ayıklıyor... (${idx+1}/${job.chunks.length} sayfa${renderedPage?' - görsel olarak':''}, şu ana kadar ${job.items.length} ürün)`;
+    const subContext = `\n\nBir önceki parçadan devam eden bilinen ALT BAŞLIK: ${currentSub ? '"'+currentSub+'"' : 'yok (henüz belli değil)'}. Bu parçada YENİ bir alt başlık görüyorsan onu kullan ve döndür; görmüyorsan (yani bu parça önceki alt başlığın devamıysa) yukarıdaki bilinen alt başlığı aynen kullanmaya devam et.`;
     const typeContext = usedType.size ? `\n\nŞu ana kadar kullanılan ürün tipi isimleri (uyan varsa AYNEN kullan, benzer ama farklı yazımlı yeni isim uydurma): ${Array.from(usedType).join(', ')}` : '';
-    const prompt = `Aşağıda bir hırdavat/nalbur/tesisat fiyat listesi PDF'inin bir sayfasından çıkarılmış metin var. Metin, sayfadaki satır/sütun yapısını korumak için her satır bir sonraki satırdan yeni satırla, aynı satır içindeki sütunlar ise " | " işaretiyle ayrılmıştır.
-
-ÖNEMLİ - İKİ FARKLI FORMAT OLABİLİR:
+    const coreInstructions = `ÖNEMLİ - İKİ FARKLI FORMAT OLABİLİR:
 1) Düz liste: her satırda bir ürün adı ve bir fiyat vardır. Bu durumda her satır = bir ürün.
-2) TABLO/MATRİS: sayfanın üst kısmında yatay eksende farklı ÖLÇÜLER (örn. 1/2", 3/4", 1", 11/4" gibi inç değerleri, altlarında 15, 20, 25, 32 gibi mm karşılıkları) başlık olarak yer alır; sol tarafta dikey eksende ürün adı ve varyantı (örn. "Dirsek" satırının altında "Siyah" ve "Galvaniz" alt satırları) bulunur; her satır ile sütunun KESİŞTİĞİ HÜCREDE bir fiyat vardır. Böyle bir tabloyla karşılaşırsan, bir satır için TEK ürün oluşturmak YETERLİ DEĞİL — o satırdaki HER ÖLÇÜ SÜTUNU için AYRI bir ürün oluşturman gerekir (bir tablo satırı, sütun sayısı kadar ürüne dönüşür). Ürün adına ölçüyü ve varyantı ekle, örnek: "Dirsek Siyah 1/2 inç (15mm)", "Dirsek Galvaniz 3/4 inç (20mm)", "Te Siyah 1 inç (25mm)". Hangi format olduğuna metnin başındaki başlık satırlarına bakarak karar ver.
+2) TABLO/MATRİS: üst kısımda yatay eksende farklı ÖLÇÜLER (örn. 1/2", 3/4", 1", 11/4" gibi inç değerleri, altlarında 15, 20, 25, 32 gibi mm karşılıkları) başlık olarak yer alır; sol tarafta dikey eksende ürün adı ve varyantı (örn. "Dirsek" satırının altında "Siyah" ve "Galvaniz" alt satırları) bulunur; her satır ile sütunun KESİŞTİĞİ HÜCREDE bir fiyat vardır. Böyle bir tabloyla karşılaşırsan bir satır için TEK ürün YETERLİ DEĞİL — o satırdaki HER ÖLÇÜ SÜTUNU için AYRI bir ürün oluştur (bir tablo satırı, sütun sayısı kadar ürüne dönüşür, onlarca hatta yüzlerce ürün olabilir, hepsini tek tek yaz, ASLA özetleme veya birkaç örnekle geçme). Ürün adına ölçüyü ve varyantı ekle, örnek: "Dirsek Siyah 1/2 inç (15mm)", "Dirsek Galvaniz 3/4 inç (20mm)".
 
-Metni bu kurallara göre ürün ürün ayır. Her ürün için:
-- name: ürünün tam adı (varsa ölçü/varyant dahil, örn: "Dirsek Siyah 1/2 inç")
-- catSub: bu ürünün ait olduğu alt başlık (metinde görüyorsan birebir kullan)
+Her ürün için:
+- name: ürünün tam adı (varsa ölçü/varyant dahil)
+- catSub: bu ürünün ait olduğu alt başlık (görüyorsan birebir kullan)
 - catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta, Adaptör, Anahtar, Te, Nipel, Tapa, Kruva) — aynı tip ürünler (farklı ölçü/varyantta olsa bile) aynı catType değerini almalı
 - taban_fiyat: o ürüne/hücreye ait fiyat, sayı
 ${subContext}${typeContext}
-Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz (örn: 1/2 inç). SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catSub":"...","catType":"...","taban_fiyat":0}], "guncel_alt_baslik":"bu parçanın sonunda geçerli olan alt başlık"}. Bu metinde ürün yoksa items boş array olsun.
-
-Metin:
-${chunkText}`;
+Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz. SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catSub":"...","catType":"...","taban_fiyat":0}], "guncel_alt_baslik":"bu sayfanın sonunda geçerli olan alt başlık"}. Ürün yoksa items boş array olsun.`;
+    let messageContent;
+    if(renderedPage){
+      const mediaType = renderedPage.slice(5, renderedPage.indexOf(';'));
+      const base64Data = renderedPage.slice(renderedPage.indexOf(',')+1);
+      messageContent = [
+        {type:'image', source:{type:'base64', media_type: mediaType, data: base64Data}},
+        {type:'text', text: `Bu görsel, bir hırdavat/nalbur/tesisat fiyat listesi PDF sayfasının görüntüsüdür (muhtemelen taranmış/görsel bir tablo, gerçek metin katmanı yok). Görseldeki tüm tabloyu/listeyi dikkatlice oku.\n\n${coreInstructions}`}
+      ];
+    } else {
+      messageContent = `Aşağıda bir hırdavat/nalbur/tesisat fiyat listesi PDF'inin bir sayfasından çıkarılmış metin var. Metin, sayfadaki satır/sütun yapısını korumak için her satır yeni satırla, aynı satır içindeki sütunlar ise " | " işaretiyle ayrılmıştır.\n\n${coreInstructions}\n\nMetin:\n${chunkText}`;
+    }
     try{
-      const resp = await callClaude([{role:'user', content: prompt}], 8192);
+      const resp = await callClaude([{role:'user', content: messageContent}], 8192);
       const parsed = parsePdfChunkResponse(resp);
       const items = parsed.items || [];
       if(parsed.guncel_alt_baslik) currentSub = parsed.guncel_alt_baslik;
