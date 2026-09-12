@@ -845,11 +845,10 @@ async function handlePdfFile(e){
       const text = await extractPageLayoutText(page);
       let images = [];
       let renderedPage = null;
+      try{ images = await extractPageImages(page); }catch(e3){}
       const digitCount = (text.match(/\d/g)||[]).length;
       if(text.trim().length < 40 || digitCount < 6){
         try{ renderedPage = await renderPageToImage(page); }catch(e4){}
-      } else {
-        try{ images = await extractPageImages(page); }catch(e3){}
       }
       if(text.trim() || renderedPage) chunks.push({ text, images, renderedPage });
       statusEl.textContent = `PDF sayfaları okunuyor... (${i}/${pdf.numPages})`;
