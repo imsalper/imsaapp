@@ -830,6 +830,18 @@ async function handlePdfFile(e){
     statusEl.innerHTML = '<span class="err">Bir hata oluştu: '+escapeHtml(err.message)+'</span>';
   }
 }
+function buildMatrixInstructions(extra){
+  return `ÖNEMLİ - İKİ FARKLI FORMAT OLABİLİR:
+1) Düz liste: her satırda/görselde bir ürün adı ve bir fiyat vardır. Bu durumda her satır/ürün = bir kayıt.
+2) TABLO/MATRİS: üst kısımda yatay eksende farklı ÖLÇÜLER (örn. 1/2", 3/4", 1", 11/4" gibi inç değerleri, altlarında 15, 20, 25, 32 gibi mm karşılıkları) başlık olarak yer alır; sol tarafta dikey eksende ürün adı ve varyantı (örn. "Dirsek" satırının altında "Siyah" ve "Galvaniz" alt satırları) bulunur; her satır ile sütunun KESİŞTİĞİ HÜCREDE bir fiyat vardır. Böyle bir tabloyla karşılaşırsan bir satır için TEK ürün YETERLİ DEĞİL — o satırdaki HER ÖLÇÜ SÜTUNU için AYRI bir ürün oluştur (bir tablo satırı, sütun sayısı kadar ürüne dönüşür, onlarca hatta yüzlerce ürün olabilir, hepsini tek tek yaz, ASLA özetleme veya birkaç örnekle geçme, ASLA tek bir "karışık" veya genel başlıklı ürün olarak toplama). Ürün adına ölçüyü ve varyantı ekle, örnek: "Dirsek Siyah 1/2 inç (15mm)", "Dirsek Galvaniz 3/4 inç (20mm)".
+
+Her ürün için:
+- name: ürünün tam adı (varsa ölçü/varyant dahil)
+- catSub: bu ürünün ait olduğu alt başlık (görüyorsan birebir kullan)
+- catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta, Adaptör, Anahtar, Te, Nipel, Tapa, Kruva) — aynı tip ürünler aynı catType değerini almalı
+- taban_fiyat: o ürüne/hücreye ait fiyat, sayı${extra||''}
+Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz.`;
+}
 async function processPdfChunks(job){
   const statusEl = document.getElementById('pdf-status');
   const usedType = new Set(job.usedType || []);
@@ -843,17 +855,7 @@ async function processPdfChunks(job){
     statusEl.textContent = `Yapay zeka ürünleri ayıklıyor... (${idx+1}/${job.chunks.length} sayfa${renderedPage?' - görsel olarak':''}, şu ana kadar ${job.items.length} ürün)`;
     const subContext = `\n\nBir önceki parçadan devam eden bilinen ALT BAŞLIK: ${currentSub ? '"'+currentSub+'"' : 'yok (henüz belli değil)'}. Bu parçada YENİ bir alt başlık görüyorsan onu kullan ve döndür; görmüyorsan (yani bu parça önceki alt başlığın devamıysa) yukarıdaki bilinen alt başlığı aynen kullanmaya devam et.`;
     const typeContext = usedType.size ? `\n\nŞu ana kadar kullanılan ürün tipi isimleri (uyan varsa AYNEN kullan, benzer ama farklı yazımlı yeni isim uydurma): ${Array.from(usedType).join(', ')}` : '';
-    const coreInstructions = `ÖNEMLİ - İKİ FARKLI FORMAT OLABİLİR:
-1) Düz liste: her satırda bir ürün adı ve bir fiyat vardır. Bu durumda her satır = bir ürün.
-2) TABLO/MATRİS: üst kısımda yatay eksende farklı ÖLÇÜLER (örn. 1/2", 3/4", 1", 11/4" gibi inç değerleri, altlarında 15, 20, 25, 32 gibi mm karşılıkları) başlık olarak yer alır; sol tarafta dikey eksende ürün adı ve varyantı (örn. "Dirsek" satırının altında "Siyah" ve "Galvaniz" alt satırları) bulunur; her satır ile sütunun KESİŞTİĞİ HÜCREDE bir fiyat vardır. Böyle bir tabloyla karşılaşırsan bir satır için TEK ürün YETERLİ DEĞİL — o satırdaki HER ÖLÇÜ SÜTUNU için AYRI bir ürün oluştur (bir tablo satırı, sütun sayısı kadar ürüne dönüşür, onlarca hatta yüzlerce ürün olabilir, hepsini tek tek yaz, ASLA özetleme veya birkaç örnekle geçme). Ürün adına ölçüyü ve varyantı ekle, örnek: "Dirsek Siyah 1/2 inç (15mm)", "Dirsek Galvaniz 3/4 inç (20mm)".
-
-Her ürün için:
-- name: ürünün tam adı (varsa ölçü/varyant dahil)
-- catSub: bu ürünün ait olduğu alt başlık (görüyorsan birebir kullan)
-- catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta, Adaptör, Anahtar, Te, Nipel, Tapa, Kruva) — aynı tip ürünler (farklı ölçü/varyantta olsa bile) aynı catType değerini almalı
-- taban_fiyat: o ürüne/hücreye ait fiyat, sayı
-${subContext}${typeContext}
-Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz. SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catSub":"...","catType":"...","taban_fiyat":0}], "guncel_alt_baslik":"bu sayfanın sonunda geçerli olan alt başlık"}. Ürün yoksa items boş array olsun.`;
+    const coreInstructions = buildMatrixInstructions(`\n${subContext}${typeContext}`) + ` SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catSub":"...","catType":"...","taban_fiyat":0}], "guncel_alt_baslik":"bu sayfanın sonunda geçerli olan alt başlık"}. Ürün yoksa items boş array olsun.`;
     let messageContent;
     if(renderedPage){
       const mediaType = renderedPage.slice(5, renderedPage.indexOf(';'));
@@ -929,22 +931,41 @@ async function handlePhotoFile(e){
   const statusEl = document.getElementById('photo-status');
   const prev = document.getElementById('photo-preview');
   prev.src = URL.createObjectURL(file); prev.style.display='block';
-  statusEl.textContent = 'Yapay zeka ürünü tanıyor...';
+  statusEl.textContent = 'Yapay zeka fotoğrafı inceliyor...';
   try{
     photoBase64 = await fileToBase64(file);
     photoMedia = file.type || 'image/jpeg';
+    const instructions = buildMatrixInstructions() + ` SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catMain":"...","catSub":"...","catType":"...","taban_fiyat":null,"price_detected":null}]}. catMain: geniş ana kategori (örn: Sıhhi Tesisat, Elektrik Elektronik, Nalbur, Hırdavat, Ev Dekor). price_detected: görselde doğrudan yazan satış fiyatı varsa o (sayı), yoksa null. taban_fiyat: fiyat listesi/katalog tablosuysa oradaki ham fiyat, yoksa null.`;
     const resp = await callClaude([{role:'user', content:[
       {type:'image', source:{type:'base64', media_type:photoMedia, data:photoBase64}},
-      {type:'text', text:`Bu görseldeki hırdavat/nalbur/tesisat ürününü tanı. catMain: geniş ana kategori (örn: Sıhhi Tesisat, Elektrik Elektronik, Nalbur, Hırdavat, Ev Dekor). catSub: ürünün ait olduğu malzeme/sistem türü (örn: PPRC Ek Parçalar, PVC Ek Parçalar). catType: spesifik ürün tipi (örn: Dirsek, Manşon, Vana). Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz. SADECE JSON döndür, açıklama ekleme: {"name":"...","catMain":"...","catSub":"...","catType":"...","price_detected":null veya sayı}`}
-    ]}]);
-    const data = parseJsonLoose(resp);
-    document.getElementById('photo-name').value = data.name||'';
-    document.getElementById('photo-catmain').value = data.catMain||'';
-    document.getElementById('photo-catsub').value = data.catSub||'';
-    document.getElementById('photo-cattype').value = data.catType||'';
-    if(data.price_detected) document.getElementById('photo-taban').value = data.price_detected;
-    statusEl.textContent = 'Tanındı. Bilgileri kontrol edip ekleyebilirsin.';
-    document.getElementById('photo-form').style.display = 'block';
+      {type:'text', text:`Bu görselde bir veya birden fazla hırdavat/nalbur/tesisat ürünü olabilir — tek bir ürün fotoğrafı da olabilir, bir fiyat listesi/katalog/tablo sayfası da olabilir. Görseli dikkatlice incele ve içindeki TÜM ürünleri çıkar.\n\n${instructions}`}
+    ]}], 8192);
+    const parsed = parsePdfChunkResponse(resp);
+    const items = parsed.items || [];
+    if(items.length > 1){
+      pdfExtractedItems = items.map(it => ({
+        name: it.name,
+        catMain: it.catMain || 'Diğer',
+        catSub: it.catSub || 'Diğer',
+        catType: it.catType || 'Diğer',
+        taban_fiyat: (it.taban_fiyat!=null ? it.taban_fiyat : it.price_detected) || 0
+      }));
+      statusEl.textContent = '';
+      document.getElementById('photo-form').style.display = 'none';
+      showScreen('pdf');
+      document.getElementById('pdf-status').textContent = items.length+' ürün tanındı (bu fotoğraf bir tablo/liste olarak algılandı). Aşağıdan oranları ayarlayıp listele.';
+      document.getElementById('pdf-config').style.display = 'block';
+    } else {
+      const data = items[0] || {};
+      document.getElementById('photo-name').value = data.name||'';
+      document.getElementById('photo-catmain').value = data.catMain||'';
+      document.getElementById('photo-catsub').value = data.catSub||'';
+      document.getElementById('photo-cattype').value = data.catType||'';
+      const detectedPrice = data.price_detected!=null ? data.price_detected : data.taban_fiyat;
+      if(detectedPrice!=null) document.getElementById('photo-taban').value = detectedPrice;
+      statusEl.textContent = 'Tanındı. Bilgileri kontrol edip ekleyebilirsin.';
+      document.getElementById('photo-form').style.display = 'block';
+    }
   }catch(err){
     statusEl.innerHTML = '<span class="err">Tanıma başarısız, elle gir: '+escapeHtml(err.message)+'</span>';
     document.getElementById('photo-form').style.display = 'block';
