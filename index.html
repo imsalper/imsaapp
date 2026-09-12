@@ -893,15 +893,16 @@ async function handlePdfFile(e){
   }
 }
 function buildMatrixInstructions(extra){
-  return `ÖNEMLİ - İKİ FARKLI FORMAT OLABİLİR:
+  return `ÖNEMLİ - ÜÇ FARKLI FORMAT OLABİLİR:
 1) Düz liste: her satırda/görselde bir ürün adı ve bir fiyat vardır. Bu durumda her satır/ürün = bir kayıt.
 2) TABLO/MATRİS: üst kısımda yatay eksende farklı ÖLÇÜLER (örn. 1/2", 3/4", 1", 11/4" gibi inç değerleri, altlarında 15, 20, 25, 32 gibi mm karşılıkları) başlık olarak yer alır; sol tarafta dikey eksende ürün adı ve varyantı (örn. "Dirsek" satırının altında "Siyah" ve "Galvaniz" alt satırları) bulunur; her satır ile sütunun KESİŞTİĞİ HÜCREDE bir fiyat vardır. Böyle bir tabloyla karşılaşırsan bir satır için TEK ürün YETERLİ DEĞİL — o satırdaki HER ÖLÇÜ SÜTUNU için AYRI bir ürün oluştur (bir tablo satırı, sütun sayısı kadar ürüne dönüşür, onlarca hatta yüzlerce ürün olabilir, hepsini tek tek yaz, ASLA özetleme veya birkaç örnekle geçme, ASLA tek bir "karışık" veya genel başlıklı ürün olarak toplama). Ürün adına ölçüyü ve varyantı ekle, örnek: "Dirsek Siyah 1/2 inç (15mm)", "Dirsek Galvaniz 3/4 inç (20mm)".
+3) FOTOĞRAFLI KATALOG (grid/kare düzeni): Sayfada birden fazla ürün fotoğrafı yan yana ve alt alta, kutucuklar halinde dizilmiş olabilir; her kutucukta kendi fotoğrafı, kod numarası, "Koli Adedi", "Ambalaj", "Fiyat" ve ürün adı (Türkçe/İngilizce) bulunur. Bu durumda HER KUTUCUK ayrı bir üründür — aynı görsel satırda yan yana 3-4 ürün olsa bile hepsini TEK TEK, ayrı ayrı çıkar, asla birleştirme. Ürünleri görseldeki sırayla (soldan sağa, yukarıdan aşağıya) listele — bu sıra çok önemli. Koli Adedi/Ambalaj bilgisi varsa ürün adının sonuna parantez içinde ekle, örnek: "1/2 Ayarlı Hortum Lansı (Koli: 250, Ambalaj: 10)".
 
 Her ürün için:
-- name: ürünün tam adı (varsa ölçü/varyant dahil)
+- name: ürünün tam adı (varsa ölçü/varyant/koli bilgisi dahil)
 - catSub: bu ürünün ait olduğu alt başlık (görüyorsan birebir kullan)
-- catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta, Adaptör, Anahtar, Te, Nipel, Tapa, Kruva) — aynı tip ürünler aynı catType değerini almalı
-- taban_fiyat: o ürüne/hücreye ait fiyat, sayı${extra||''}
+- catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta, Adaptör, Anahtar, Te, Nipel, Tapa, Kruva, Hortum Lansı, Tabanca) — aynı tip ürünler aynı catType değerini almalı
+- taban_fiyat: o ürüne/hücreye/kutucuğa ait "Fiyat" değeri, sayı${extra||''}
 Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz.`;
 }
 async function processPdfChunks(job){
