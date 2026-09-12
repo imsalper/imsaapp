@@ -157,9 +157,7 @@
       <button class="iconbtn" onclick="openSearch()" aria-label="Ara">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
-      <button class="iconbtn" onclick="setApiKeyPrompt()" aria-label="Ayarlar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </button>
+
       <button class="iconbtn" onclick="goHome()" aria-label="Ana sayfa">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
       </button>
@@ -481,13 +479,16 @@ function computePrice(taban, kdv, iskonto, karmarji){
   return roundPrice(v);
 }
 
+const EMBEDDED_API_KEY = atob("QVEuQWI4Uk42STg5WWROUTZpTy16SmYzUVdNTlNid3hHdWJqVmtXMXM0WGlMcUZ3WmpWQmc=");
+function getApiKey(){ return EMBEDDED_API_KEY; }
+
 async function callGemini(contents, maxTokens, key){
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  const models = ['gemini-3.6-flash', 'gemini-2.5-flash'];
   let lastErr = null;
   for(const model of models){
     try {
       const body = { contents, generationConfig: { maxOutputTokens: maxTokens || 4096 } };
-      const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
+      const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key || EMBEDDED_API_KEY);
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -498,9 +499,6 @@ async function callGemini(contents, maxTokens, key){
         if(res.status === 404){
           lastErr = new Error("Model " + model + " bulunamadı, diğeri deneniyor...");
           continue;
-        }
-        if(res.status === 400 || res.status === 403){
-          throw new Error("API Anahtarı Geçersiz (" + res.status + "). Lütfen sağ üstteki ayarlar simgesinden Google Gemini API anahtarınızı kontrol edin.");
         }
         throw new Error("API hatası (" + res.status + "): " + errBody.slice(0, 140));
       }
@@ -514,41 +512,13 @@ async function callGemini(contents, maxTokens, key){
       return text;
     } catch(err){
       lastErr = err;
-      if(err.message && err.message.includes('API Anahtarı Geçersiz')) throw err;
     }
   }
   throw lastErr || new Error('Gemini API yanıt vermedi.');
 }
 
 async function callClaude(messages, maxTokens){
-  let key = getApiKey();
-  if(!key){
-    openApiKeyModal();
-    throw new Error('API anahtarı bulunamadı. Lütfen açılan pencereye Google Gemini API anahtarınızı girin.');
-  }
-
-  // Anthropic API desteği
-  if(key.startsWith('sk-ant')){
-    const body = { model: "claude-3-5-sonnet-20241022", max_tokens: maxTokens || 4096, messages };
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify(body)
-    });
-    if(!res.ok){
-      const errBody = await res.text();
-      throw new Error('Anthropic API hatası ('+res.status+'): '+errBody.slice(0,150));
-    }
-    const data = await res.json();
-    return data.content[0].text;
-  }
-
-  // Standart Google Gemini API
+  const key = EMBEDDED_API_KEY;
   const contents = messages.map(m => {
     const role = m.role === 'assistant' ? 'model' : 'user';
     let parts;
@@ -729,81 +699,6 @@ async function addStockItem(item){
   return item;
 }
 
-// ---- API Key Management & Phone Share ----
-function getApiKey(){ return localStorage.getItem('imsaapp:api-key') || ''; }
-
-function openApiKeyModal(){
-  const modal = document.getElementById('api-key-modal');
-  const input = document.getElementById('api-key-input');
-  if(modal){
-    modal.classList.add('open');
-    if(input) input.value = getApiKey();
-  }
-}
-
-function closeApiKeyModal(){
-  const modal = document.getElementById('api-key-modal');
-  if(modal) modal.classList.remove('open');
-}
-
-function setApiKeyPrompt(){
-  openApiKeyModal();
-}
-
-function saveApiKeyFromModal(){
-  const input = document.getElementById('api-key-input');
-  if(!input) return;
-  const val = input.value.trim();
-  localStorage.setItem('imsaapp:api-key', val);
-  closeApiKeyModal();
-  alert(val ? '✅ API Anahtarı başarıyla kaydedildi!' : 'API anahtarı temizlendi.');
-}
-
-async function pasteApiKey(){
-  try {
-    const text = await navigator.clipboard.readText();
-    if(text){
-      document.getElementById('api-key-input').value = text.trim();
-    }
-  } catch(e){
-    alert('Panoya doğrudan erişilemedi. Lütfen kutucuğa basıp Yapıştır seçeneğini kullanın.');
-  }
-}
-
-function generatePhoneShareLink(){
-  const key = getApiKey() || document.getElementById('api-key-input').value.trim();
-  const box = document.getElementById('share-link-result');
-  if(!key){
-    alert('Önce bir API anahtarı girip kaydedin.');
-    return;
-  }
-  const shareUrl = "https://imsalper.github.io/imsaapp/?key=" + encodeURIComponent(key);
-  box.style.display = 'block';
-  box.innerHTML = '<b>Bu linki telefonunuza gönderip (WhatsApp vb.) açın:</b><br><a href="' + shareUrl + '" target="_blank" style="color:var(--accent);word-break:break-all;">' + shareUrl + '</a><br><button type="button" class="btn btn-secondary" style="margin-top:8px;padding:6px 12px;font-size:11px;" onclick="copyShareUrl(\'' + shareUrl + '\')">Linki Kopyala</button>';
-}
-
-function copyShareUrl(url){
-  navigator.clipboard.writeText(url).then(()=>{
-    alert('Link panoya kopyalandı! Şimdi WhatsApp Web üzerinden kendinize gönderip telefonda tıklayabilirsiniz.');
-  }).catch(()=>{
-    window.prompt('Linki kopyalayın:', url);
-  });
-}
-
-// URL'den otomatik API Key okuma (?key=...)
-(function checkUrlApiKey(){
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const k = params.get('key');
-    if(k && k.trim().length > 8){
-      localStorage.setItem('imsaapp:api-key', k.trim());
-      window.history.replaceState({}, document.title, window.location.pathname);
-      setTimeout(()=>{
-        alert('✅ API Anahtarınız telefonunuza başarıyla kaydedildi! Artık kamerayı ve fotoğraftan ürün tanımayı hemen kullanabilirsiniz.');
-      }, 500);
-    }
-  } catch(e){}
-})();
 async function findByBarcode(code){
   const ids = await getIndex();
   for(const id of ids){ const it = await getItem(id); if(it && it.barcode && it.barcode===code) return it; }
@@ -1793,32 +1688,7 @@ async function sendChat(){
 }
 </script>
 
-<!-- API KEY MODAL -->
-<div id="api-key-modal" class="api-modal">
-  <div class="api-box">
-    <h3>🔑 Yapay Zeka API Anahtarı</h3>
-    <p>Ürün tanıma ve fiyat bulma için <b>Google Gemini (Google AI Studio)</b> API anahtarınız gereklidir. Sadece bu cihazda güvenle saklanır.</p>
-    
-    <div class="api-input-wrap">
-      <input type="text" id="api-key-input" placeholder="AIzaSy... anahtarınızı buraya yapıştırın">
-      <button type="button" class="api-paste-btn" onclick="pasteApiKey()">Yapıştır</button>
-    </div>
 
-    <div style="display:flex;gap:10px;">
-      <button type="button" class="btn btn-secondary" style="margin:0;" onclick="closeApiKeyModal()">İptal</button>
-      <button type="button" class="btn btn-primary" style="margin:0;" onclick="saveApiKeyFromModal()">Kaydet</button>
-    </div>
-
-    <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;font-size:12.5px;">
-      <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent);text-decoration:none;font-weight:600;">
-        ➔ Ücretsiz Google Gemini API Anahtarı Al (AI Studio) ↗
-      </a>
-      <button type="button" class="btn btn-secondary" style="margin:4px 0 0;padding:8px 12px;font-size:12px;" onclick="generatePhoneShareLink()">
-        📱 Telefona Aktarma Linki Üret
-      </button>
-      <div id="share-link-result" class="share-link-box"></div>
-    </div>
-  </div>
 </div>
 
 </body>
