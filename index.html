@@ -405,7 +405,7 @@ async function callClaude(messages, maxTokens){
     return { role, parts };
   });
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens || 4096 } };
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", {
     method:"POST",
     headers:{
       "Content-Type":"application/json",
