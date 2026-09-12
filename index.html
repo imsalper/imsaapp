@@ -108,6 +108,27 @@
   .divider{height:1px;background:var(--line);margin:16px 0;}
   .chip-filter{padding:7px 14px;border-radius:20px;border:1px solid var(--line);font-size:13px;cursor:pointer;background:var(--panel);}
   .chip-filter.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+  /* CAMERA MODAL & BUTTONS */
+  .camera-modal{position:fixed;inset:0;background:rgba(0,0,0,0.96);z-index:70;display:none;flex-direction:column;align-items:center;justify-content:center;}
+  .camera-container{width:100%;max-width:480px;height:100%;display:flex;flex-direction:column;position:relative;background:#000;}
+  .camera-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;color:#fff;position:absolute;top:0;left:0;right:0;z-index:10;background:linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);}
+  .camera-title{font-size:18px;font-weight:600;color:#fff;display:flex;align-items:center;gap:8px;}
+  .camera-close-btn{color:#fff;background:rgba(255,255,255,0.22);border:none;border-radius:50%;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;transition:background 0.15s;}
+  .camera-close-btn:active{background:rgba(255,255,255,0.4);}
+  .camera-viewfinder{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#000;}
+  #camera-video{width:100%;height:100%;object-fit:cover;}
+  .camera-overlay-frame{position:absolute;width:82%;height:62%;border:2px dashed rgba(255,255,255,0.85);border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,0.42);pointer-events:none;}
+  .camera-overlay-frame::after{content:'Ürünü / barkodu çerçeve içine getirin';position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:12px;color:rgba(255,255,255,0.8);font-weight:500;}
+  .camera-controls{display:flex;align-items:center;justify-content:space-around;padding:22px 24px calc(22px + env(safe-area-inset-bottom, 0px));background:linear-gradient(to top, rgba(0,0,0,0.88), transparent);position:absolute;bottom:0;left:0;right:0;z-index:10;}
+  .camera-shutter-btn{width:76px;height:76px;border-radius:50%;border:4px solid #fff;background:transparent;padding:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform 0.1s;}
+  .camera-shutter-btn:active{transform:scale(0.92);}
+  .shutter-inner{width:100%;height:100%;background:#fff;border-radius:50%;}
+  .camera-btn-action{background:rgba(255,255,255,0.22);color:#fff;border:none;border-radius:24px;padding:10px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;cursor:pointer;backdrop-filter:blur(6px);transition:background 0.15s;}
+  .camera-btn-action:active{background:rgba(255,255,255,0.4);}
+  .cam-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 16px;}
+  .cam-action-grid .btn{margin-top:0;padding:11px 14px;font-size:14px;}
+
 </style>
 </head>
 <body>
@@ -209,11 +230,22 @@
   <!-- PHOTO UPLOAD -->
   <div class="screen" id="screen-photo">
     <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Fotoğraf ile stok yükle</h2></div>
-    <div class="dropzone" id="photo-drop" onclick="document.getElementById('photo-file').click()">
+    <div class="dropzone" id="photo-drop" onclick="openLiveCamera('photo')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-      <div>Ürün fotoğrafı çek veya seç</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:4px;">Kamerayı Aç / Fotoğraf Çek</div>
+      <div class="hint">Ürün veya katalog sayfasının fotoğrafını çekin veya seçin</div>
     </div>
-    <input type="file" id="photo-file" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoFile(event)">
+    <div class="cam-action-grid">
+      <button type="button" class="btn btn-secondary" onclick="openLiveCamera('photo')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Kamerayı Aç
+      </button>
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('photo-file').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Galeriden Seç
+      </button>
+    </div>
+    <input type="file" id="photo-file" accept="image/*" style="display:none" onchange="handlePhotoFile(event)">
     <img id="photo-preview" class="preview-img" style="display:none">
     <div id="photo-status" class="hint"></div>
     <div id="photo-form" style="display:none">
@@ -238,11 +270,22 @@
   <!-- BARCODE -->
   <div class="screen" id="screen-barcode">
     <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Barkod ile stok yükle</h2></div>
-    <div class="dropzone" onclick="document.getElementById('bc-file').click()">
+    <div class="dropzone" onclick="openLiveCamera('barcode')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="4" y2="20"/><line x1="8" y1="4" x2="8" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/><line x1="19" y1="4" x2="19" y2="20"/></svg>
-      <div>Barkodun fotoğrafını çek</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:4px;">Barkodu Kamerayla Oku</div>
+      <div class="hint">Canlı kamera ile barkodun fotoğrafını anında çekin</div>
     </div>
-    <input type="file" id="bc-file" accept="image/*" capture="environment" style="display:none" onchange="handleBarcodeFile(event)">
+    <div class="cam-action-grid">
+      <button type="button" class="btn btn-secondary" onclick="openLiveCamera('barcode')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Kamerayı Aç
+      </button>
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('bc-file').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Galeriden Seç
+      </button>
+    </div>
+    <input type="file" id="bc-file" accept="image/*" style="display:none" onchange="handleBarcodeFile(event)">
     <div id="bc-status" class="hint"></div>
     <label>Okunamadıysa barkod numarasını elle gir</label>
     <div style="display:flex;gap:8px;">
@@ -272,11 +315,22 @@
   <!-- PRICE FIND -->
   <div class="screen" id="screen-pricefind">
     <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Ürün fiyatı bul</h2></div>
-    <div class="dropzone" onclick="document.getElementById('pf-file').click()">
+    <div class="dropzone" onclick="openLiveCamera('pricefind')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-      <div>Ürünün fotoğrafını çek</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:4px;">Kamerayı Aç / Fotoğraf Çek</div>
+      <div class="hint">Canlı kamera ile ürünün fotoğrafını anında çekin</div>
     </div>
-    <input type="file" id="pf-file" accept="image/*" capture="environment" style="display:none" onchange="handlePriceFindFile(event)">
+    <div class="cam-action-grid">
+      <button type="button" class="btn btn-secondary" onclick="openLiveCamera('pricefind')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Kamerayı Aç
+      </button>
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('pf-file').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Galeriden Seç
+      </button>
+    </div>
+    <input type="file" id="pf-file" accept="image/*" style="display:none" onchange="handlePriceFindFile(event)">
     <img id="pf-preview" class="preview-img" style="display:none">
     <label>Veya yazarak tarif et</label>
     <textarea id="pf-desc" placeholder="Örn: yarım inç pprc dirsek"></textarea>
@@ -333,6 +387,33 @@
       <textarea id="chat-input" placeholder="Bir şey sor..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
       <button class="sendbtn" onclick="sendChat()" aria-label="Gönder">➤</button>
     </div>
+  </div>
+</div>
+
+
+<!-- LIVE CAMERA MODAL -->
+<div id="camera-modal" class="camera-modal">
+  <div class="camera-container">
+    <div class="camera-header">
+      <span class="camera-title">📷 Canlı Kamera</span>
+      <button type="button" class="camera-close-btn" onclick="closeCameraModal()" aria-label="Kapat">✕</button>
+    </div>
+    <div class="camera-viewfinder">
+      <video id="camera-video" autoplay playsinline muted></video>
+      <div class="camera-overlay-frame"></div>
+    </div>
+    <div class="camera-controls">
+      <button type="button" class="camera-btn-action" onclick="switchCameraFacing()">
+        🔄 Çevir
+      </button>
+      <button type="button" class="camera-shutter-btn" onclick="captureLivePhoto()" aria-label="Fotoğraf Çek">
+        <div class="shutter-inner"></div>
+      </button>
+      <button type="button" class="camera-btn-action" onclick="openFilePickerFromCamera()">
+        📁 Galeri
+      </button>
+    </div>
+    <div id="camera-error" style="display:none;position:absolute;bottom:110px;left:20px;right:20px;background:rgba(0,0,0,0.88);color:#fff;padding:12px;border-radius:12px;text-align:center;font-size:13px;border:1px solid rgba(255,255,255,0.25);z-index:20;"></div>
   </div>
 </div>
 
@@ -612,6 +693,7 @@ refreshHomeCount();
 
 // ---- navigation ----
 function showScreen(name, opts){
+  closeCameraModal();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
   if(name==='list') renderList(opts);
@@ -1068,7 +1150,8 @@ function cropImageFromBox(imgElement, box2d){
 }
 
 async function handlePhotoFile(e){
-  const file = e.target.files[0]; if(!file) return;
+  const file = (e && e.target && e.target.files) ? e.target.files[0] : (e instanceof Blob || e instanceof File ? e : null);
+  if(!file) return;
   const statusEl = document.getElementById('photo-status');
   const prev = document.getElementById('photo-preview');
   const form = document.getElementById('photo-form');
@@ -1312,7 +1395,8 @@ function clearPhotoBatch(){
 
 // ---- Barcode flow ----
 async function handleBarcodeFile(e){
-  const file = e.target.files[0]; if(!file) return;
+  const file = (e && e.target && e.target.files) ? e.target.files[0] : (e instanceof Blob || e instanceof File ? e : null);
+  if(!file) return;
   const statusEl = document.getElementById('bc-status');
   statusEl.textContent = 'Barkod okunuyor...';
   const dataUrl = URL.createObjectURL(file);
@@ -1376,13 +1460,141 @@ async function saveManualItem(){
   refreshHomeCount();
 }
 
+
+// ---- LIVE CAMERA SYSTEM ----
+let cameraStream = null;
+let currentCameraTarget = 'pricefind';
+let currentFacingMode = 'environment';
+
+async function openLiveCamera(target = 'pricefind'){
+  currentCameraTarget = target;
+  const modal = document.getElementById('camera-modal');
+  const errEl = document.getElementById('camera-error');
+  if(errEl){ errEl.style.display = 'none'; errEl.innerHTML = ''; }
+
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    triggerFilePickerFallback(target, 'Tarayıcınız doğrudan canlı kamera akışını desteklemiyor. Dosya/kamera seçici açılıyor...');
+    return;
+  }
+
+  modal.style.display = 'flex';
+  await startCameraStream();
+}
+
+async function startCameraStream(){
+  const video = document.getElementById('camera-video');
+  const errEl = document.getElementById('camera-error');
+  if(cameraStream){
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  try {
+    const constraints = {
+      video: {
+        facingMode: { ideal: currentFacingMode },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    };
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = cameraStream;
+    await video.play();
+  } catch(err) {
+    console.warn('Birincil kamera modu başarısız, standart kamera deneniyor:', err);
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      video.srcObject = cameraStream;
+      await video.play();
+    } catch(err2) {
+      console.error('Kamera başlatılamadı:', err2);
+      if(errEl){
+        errEl.style.display = 'block';
+        errEl.innerHTML = '⚠️ Kameraya erişilemedi.<br><span style="font-size:12px;opacity:0.85;">Tarayıcı kamera iznini kontrol edin veya dosyadan seçin:</span><br><button type="button" class="btn btn-secondary" style="margin-top:8px;padding:8px 16px;font-size:13px;width:auto;" onclick="openFilePickerFromCamera()">📁 Galeriden / Dosyadan Seç</button>';
+      }
+    }
+  }
+}
+
+function switchCameraFacing(){
+  currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+  startCameraStream();
+}
+
+function closeCameraModal(){
+  const modal = document.getElementById('camera-modal');
+  if(modal) modal.style.display = 'none';
+  if(cameraStream){
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+}
+
+function captureLivePhoto(){
+  const video = document.getElementById('camera-video');
+  if(!video || !video.videoWidth){
+    closeCameraModal();
+    return;
+  }
+  
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  
+  if(currentFacingMode === 'user'){
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  
+  canvas.toBlob((blob) => {
+    if(!blob) return;
+    const file = new File([blob], "kamera_" + Date.now() + ".jpg", { type: "image/jpeg" });
+    closeCameraModal();
+    
+    if(currentCameraTarget === 'pricefind'){
+      handlePriceFindFile(file);
+    } else if(currentCameraTarget === 'photo'){
+      handlePhotoFile(file);
+    } else if(currentCameraTarget === 'barcode'){
+      handleBarcodeFile(file);
+    }
+  }, 'image/jpeg', 0.92);
+}
+
+function openFilePickerFromCamera(){
+  closeCameraModal();
+  if(currentCameraTarget === 'pricefind'){
+    document.getElementById('pf-file').click();
+  } else if(currentCameraTarget === 'photo'){
+    document.getElementById('photo-file').click();
+  } else if(currentCameraTarget === 'barcode'){
+    document.getElementById('bc-file').click();
+  }
+}
+
+function triggerFilePickerFallback(target, msg){
+  if(msg) alert(msg);
+  if(target === 'pricefind'){
+    document.getElementById('pf-file').click();
+  } else if(target === 'photo'){
+    document.getElementById('photo-file').click();
+  } else if(target === 'barcode'){
+    document.getElementById('bc-file').click();
+  }
+}
+
 // ---- Price find ----
 let pfBase64=null, pfMedia=null;
 async function handlePriceFindFile(e){
-  const file = e.target.files[0]; if(!file) return;
+  const file = (e && e.target && e.target.files) ? e.target.files[0] : (e instanceof Blob || e instanceof File ? e : null);
+  if(!file) return;
   const prev = document.getElementById('pf-preview');
   prev.src = URL.createObjectURL(file); prev.style.display='block';
   pfBase64 = await fileToBase64(file); pfMedia = file.type||'image/jpeg';
+  const statusEl = document.getElementById('pf-status');
+  if(statusEl) statusEl.innerHTML = '<span style="color:var(--teal,#1F6F68);font-weight:600;">✓ Fotoğraf hazır. Aşağıdaki "Tanımla" butonuna basarak fiyat ve ürün bilgisini görebilirsiniz.</span>';
 }
 async function identifyPriceItem(){
   const statusEl = document.getElementById('pf-status');
