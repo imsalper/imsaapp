@@ -389,15 +389,27 @@ function computePrice(taban, kdv, iskonto, karmarji){
 
 async function callClaude(messages, maxTokens){
   const key = getApiKey();
-  if(!key){ throw new Error('Önce sağ üstteki dişli ikonundan Anthropic API anahtarını gir.'); }
-  const body = { model: "claude-sonnet-4-6", max_tokens: maxTokens || 4096, messages };
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  if(!key){ throw new Error('Önce sağ üstteki dişli ikonundan Google AI (Gemini) API anahtarını gir.'); }
+  const contents = messages.map(m => {
+    const role = m.role === 'assistant' ? 'model' : 'user';
+    let parts;
+    if(typeof m.content === 'string'){
+      parts = [{ text: m.content }];
+    } else {
+      parts = m.content.map(block => {
+        if(block.type === 'text') return { text: block.text };
+        if(block.type === 'image') return { inline_data: { mime_type: block.source.media_type, data: block.source.data } };
+        return null;
+      }).filter(Boolean);
+    }
+    return { role, parts };
+  });
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens || 4096 } };
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
     method:"POST",
     headers:{
       "Content-Type":"application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
+      "x-goog-api-key": key
     },
     body: JSON.stringify(body)
   });
@@ -406,7 +418,12 @@ async function callClaude(messages, maxTokens){
     throw new Error('API hatası ('+res.status+'): '+errBody.slice(0,150));
   }
   const data = await res.json();
-  const text = (data.content||[]).map(b=>b.text||'').join('\n');
+  const candidate = (data.candidates && data.candidates[0]) || {};
+  const text = ((candidate.content && candidate.content.parts) || []).map(p=>p.text||'').join('\n');
+  if(!text){
+    const reason = candidate.finishReason || (data.promptFeedback && data.promptFeedback.blockReason) || 'boş yanıt';
+    throw new Error('Yapay zekadan yanıt alınamadı ('+reason+').');
+  }
   return text;
 }
 function parseJsonLoose(text){
@@ -571,7 +588,7 @@ async function addStockItem(item){
 function getApiKey(){ return localStorage.getItem('imsaapp:api-key') || ''; }
 function setApiKeyPrompt(){
   const cur = getApiKey();
-  const key = window.prompt('Anthropic API anahtarını yapıştır (console.anthropic.com > API Keys). Sadece bu cihazda saklanır, kimseyle paylaşılmaz.', cur);
+  const key = window.prompt('Google AI (Gemini) API anahtarını yapıştır (aistudio.google.com/app/apikey adresinden ÜCRETSİZ alınır). Sadece bu cihazda saklanır, kimseyle paylaşılmaz.', cur);
   if(key !== null){ localStorage.setItem('imsaapp:api-key', key.trim()); alert(key.trim() ? 'Kaydedildi.' : 'Anahtar temizlendi.'); }
 }
 async function findByBarcode(code){
@@ -928,6 +945,7 @@ async function processPdfChunks(job){
     }catch(chunkErr){
       failedChunks++;
     }
+    if(idx < job.chunks.length-1) await new Promise(r=>setTimeout(r, 3000));
     job.nextIndex = idx+1;
     job.currentSub = currentSub;
     job.usedType = Array.from(usedType);
@@ -1189,7 +1207,16 @@ async function sendChat(){
   body.insertAdjacentHTML('beforeend', `<div class="msg ai" id="${loadingId}">...</div>`);
   body.scrollTop = body.scrollHeight;
   try{
-    const sysMsg = {role:'user', content:'Sen İmsaApp adlı bir nalbur/hırdavat dükkanının stok ve fiyat asistanısın. Ürün, kategori, fiyatlandırma konularında pratik ve kısa yardım et; gerekirse genel sohbet de edebilirsin. Bu ilk mesajdır, buna kısaca selam vererek değil, sıradaki gerçek soruya cevap vererek başla.'};
+    const allItems = await getAllItems();
+    const words = text.toLowerCase().split(/\s+/).filter(w=>w.length>2);
+    const matches = words.length ? allItems.filter(it=>{
+      const hay = [it.name,it.catMain,it.catSub,it.catType].filter(Boolean).join(' ').toLowerCase();
+      return words.some(w=>hay.includes(w));
+    }).slice(0,60) : [];
+    const stockContext = matches.length
+      ? `\n\nSorusuyla ilgili olabilecek gerçek stok kayıtları (sadece bunlar gerçek, başka ürün uydurma):\n`+matches.map(m=>`- ${m.name} | ${[m.catMain,m.catSub,m.catType].filter(Boolean).join(' > ')} | ${m.price!=null?m.price+' ₺':'fiyat yok'} | ${m.quantity||1} ${m.unit||'adet'}`).join('\n')
+      : `\n\nBu soruyla eşleşen bir stok kaydı bulunamadı; stokta yoksa "stokta bulamadım" de, uydurma ürün/fiyat söyleme.`;
+    const sysMsg = {role:'user', content:'Sen İmsaApp adlı bir nalbur/hırdavat dükkanının stok ve fiyat asistanısın. Ürün, kategori, fiyatlandırma konularında pratik ve kısa yardım et; gerekirse genel sohbet de edebilirsin. Kullanıcı stoktaki ürünleri sıralamamı, listelememi veya karşılaştırmamı isterse aşağıda verilen gerçek stok kayıtlarını kullan.'+stockContext+'\n\nBu ilk mesajdır, buna kısaca selam vererek değil, sıradaki gerçek soruya cevap vererek başla.'};
     const resp = await callClaude([sysMsg, ...chatHistory]);
     document.getElementById(loadingId).textContent = resp;
     chatHistory.push({role:'assistant', content:resp});
