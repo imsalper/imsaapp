@@ -105,6 +105,8 @@
   .err{color:var(--danger);font-size:13px;margin-top:8px;}
   .hint{font-size:12.5px;color:var(--sub);margin-top:10px;line-height:1.5;}
   .divider{height:1px;background:var(--line);margin:16px 0;}
+  .chip-filter{padding:7px 14px;border-radius:20px;border:1px solid var(--line);font-size:13px;cursor:pointer;background:var(--panel);}
+  .chip-filter.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 </style>
 </head>
 <body>
@@ -118,6 +120,9 @@
     </button>
     <h1>İmsaApp</h1>
     <div style="display:flex;gap:2px;">
+      <button class="iconbtn" onclick="openSearch()" aria-label="Ara">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
       <button class="iconbtn" onclick="setApiKeyPrompt()" aria-label="Ayarlar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -274,6 +279,14 @@
     </div>
   </div>
 
+  <!-- SEARCH -->
+  <div class="screen" id="screen-search">
+    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>Ara</h2></div>
+    <input type="text" id="search-input" placeholder="Ürün adı veya tipi yaz (örn: dirsek)" oninput="runSearch()">
+    <div id="search-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;"></div>
+    <div id="search-results" style="margin-top:16px;"></div>
+  </div>
+
 </div>
 
 <button class="fab" onclick="openChat()" aria-label="Yapay zeka asistanı">
@@ -388,6 +401,26 @@ function parseJsonLoose(text){
       }
     }
     throw new Error('Yapay zekadan gelen yanıt eksik geldi (muhtemelen çok uzundu). Tekrar dene ya da PDF\'i/listeyi daha kısa parçalara böl.');
+  }
+}
+function parsePdfChunkResponse(text){
+  const clean = text.replace(/```json|```/g,'').trim();
+  try{ return JSON.parse(clean); }
+  catch(e){
+    const m = clean.match(/"items"\s*:\s*(\[[\s\S]*)/);
+    if(m){
+      let arrText = m[1];
+      const lastGood = arrText.lastIndexOf('},');
+      if(lastGood > -1){
+        arrText = arrText.slice(0, lastGood+1) + ']';
+        try{
+          const items = JSON.parse(arrText);
+          const subM = clean.match(/"guncel_alt_baslik"\s*:\s*"([^"]*)"/);
+          return { items, guncel_alt_baslik: subM ? subM[1] : null };
+        }catch(e2){}
+      }
+    }
+    return { items: [], guncel_alt_baslik: null };
   }
 }
 function fileToBase64(file){
@@ -506,6 +539,45 @@ async function renderList(filter){
 }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+// ---- Search ----
+let searchSelectedSubs = new Set();
+async function openSearch(){
+  showScreen('search');
+  const subs = await getDistinctValues('catSub');
+  const chipsEl = document.getElementById('search-chips');
+  chipsEl.innerHTML = subs.map(s=>`<div class="chip-filter" data-sub="${escapeHtml(s)}" onclick="toggleSearchChip(this)">${escapeHtml(s)}</div>`).join('');
+  searchSelectedSubs = new Set();
+  document.getElementById('search-input').value = '';
+  runSearch();
+}
+function toggleSearchChip(el){
+  const sub = el.getAttribute('data-sub');
+  if(searchSelectedSubs.has(sub)){ searchSelectedSubs.delete(sub); el.classList.remove('active'); }
+  else { searchSelectedSubs.add(sub); el.classList.add('active'); }
+  runSearch();
+}
+async function runSearch(){
+  const q = (document.getElementById('search-input').value||'').trim().toLowerCase();
+  const items = await getAllItems();
+  const filtered = items.filter(it=>{
+    const matchesText = !q || (it.name||'').toLowerCase().includes(q) || (it.catType||'').toLowerCase().includes(q);
+    const matchesSub = searchSelectedSubs.size===0 || searchSelectedSubs.has(it.catSub);
+    return matchesText && matchesSub;
+  });
+  const el = document.getElementById('search-results');
+  if(filtered.length===0){ el.innerHTML = '<div class="empty">Sonuç yok.</div>'; return; }
+  el.innerHTML = filtered.map(it=>`
+    <div class="list-item">
+      <div class="info">
+        <div class="name">${escapeHtml(it.name)}</div>
+        <div class="meta">${it.quantity||1} ${it.unit||'adet'} ${it.barcode? '· '+it.barcode:''}</div>
+        <div class="meta" style="opacity:0.75;">${[it.catMain,it.catSub].filter(Boolean).map(escapeHtml).join(' › ')}</div>
+        <span class="tag" style="background:${catColor(it.catMain)}22;color:${catColor(it.catMain)}">${escapeHtml(it.catType||'-')}</span>
+      </div>
+      <div class="price-tag">${it.price!=null? it.price+' ₺':'-'}</div>
+    </div>`).join('');
+}
+
 // ---- PDF flow ----
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 let pdfExtractedItems = [];
@@ -515,6 +587,8 @@ async function handlePdfFile(e){
   statusEl.textContent = 'PDF okunuyor...';
   document.getElementById('pdf-drop-label').textContent = file.name;
   try{
+    const fixedMain = window.prompt('Bu PDF hangi ana kategoriye ait? (tüm ürünlere uygulanacak)', 'Sıhhi Tesisat');
+    if(fixedMain === null){ statusEl.textContent=''; return; }
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data:buf}).promise;
     const pageTexts = [];
@@ -530,35 +604,33 @@ async function handlePdfFile(e){
       else { cur += '\n' + pt; }
     }
     if(cur.trim()) chunks.push(cur);
-    // add a small overlap so a section header near a chunk's end isn't lost for the next chunk's items
-    for(let i=chunks.length-1;i>0;i--){
-      const tail = chunks[i-1].slice(-350);
-      chunks[i] = tail + '\n' + chunks[i];
-    }
 
     pdfExtractedItems = [];
     let failedChunks = 0;
-    const usedMain = new Set(), usedSub = new Set(), usedType = new Set();
+    let currentSub = null;
+    const usedType = new Set();
     for(let idx=0; idx<chunks.length; idx++){
       statusEl.textContent = `Yapay zeka ürünleri ayıklıyor... (${idx+1}/${chunks.length} parça, şu ana kadar ${pdfExtractedItems.length} ürün)`;
-      const knownContext = (usedMain.size||usedSub.size||usedType.size) ? `\n\nŞu ana kadar bu listede kullanılan kategori isimleri (varsa AYNEN bunlardan birini kullan, benzer ama farklı yazımlı yeni bir isim UYDURMA):\nAna Kategoriler: ${Array.from(usedMain).join(', ')||'-'}\nAlt Gruplar: ${Array.from(usedSub).join(', ')||'-'}\nÜrün Tipleri: ${Array.from(usedType).join(', ')||'-'}` : '';
-      const prompt = `Aşağıda bir hırdavat/nalbur/tesisat fiyat listesi PDF'inin bir bölümünden çıkarılmış ham metin var. Bu metin genellikle ANA BAŞLIK ve ALT BAŞLIK içerir (örnek: "SIHHİ TESİSAT", "PPRC EK PARÇALAR", "PVC EK PARÇALAR" gibi) — bunları mutlaka dikkate al ve o başlığın altındaki ürünleri o başlıkla eşleştir. Metni ürün ürün ayır. Her ürün için şu alanları çıkar:
+      const subContext = `\n\nBir önceki parçadan devam eden bilinen ALT BAŞLIK: ${currentSub ? '"'+currentSub+'"' : 'yok (henüz belli değil)'}. Bu parçada metnin başında YENİ bir alt başlık görüyorsan onu kullan ve döndür; görmüyorsan (yani bu parça önceki alt başlığın devamıysa) yukarıdaki bilinen alt başlığı aynen kullanmaya devam et.`;
+      const typeContext = usedType.size ? `\n\nŞu ana kadar kullanılan ürün tipi isimleri (uyan varsa AYNEN kullan, benzer ama farklı yazımlı yeni isim uydurma): ${Array.from(usedType).join(', ')}` : '';
+      const prompt = `Aşağıda bir hırdavat/nalbur/tesisat fiyat listesi PDF'inin bir bölümünden çıkarılmış ham metin var. Bu metin bir ALT BAŞLIK altındaki ürünleri içerir (örnek alt başlıklar: "PPRC Ek Parçalar", "UPVC ve Ek Parçaları", "Kaplin/Sulama", "Metal", "Sarı" gibi — bunlar sadece örnek, gerçek başlığı metinden birebir al). Metni ürün ürün ayır. Her ürün için:
 - name: ürünün tam adı (ölçüsüyle birlikte, örn: "Dirsek 90 derece 32mm")
-- catMain: geniş ana kategori (örnek: Sıhhi Tesisat, Elektrik Elektronik, Nalbur, Hırdavat, Ev Dekor) — metindeki en üst düzey başlığa göre belirle
-- catSub: metindeki ALT BAŞLIĞI birebir kullan (örnek: PPRC Ek Parçalar, PVC Ek Parçalar, UPVC Boru, Dublaj, Contalar) — aynı alt başlık altındaki TÜM ürünler aynı catSub değerini almalı
-- catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta) — aynı tip ürünler (örn. tüm dirsekler, farklı ölçülerde olsa bile) aynı catType değerini almalı
+- catSub: bu ürünün ait olduğu alt başlık (metinde görüyorsan birebir kullan)
+- catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta, Adaptör, Anahtar) — aynı tip ürünler (farklı ölçülerde olsa bile) aynı catType değerini almalı
 - taban_fiyat: metinde geçen ham/taban fiyat, sayı
-${knownContext}
-Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz (örn: 1/2 inç). SADECE JSON array döndür, başka hiçbir açıklama, markdown işareti ekleme. Bu metinde ürün yoksa boş array [] döndür. Format: [{"name":"...","catMain":"...","catSub":"...","catType":"...","taban_fiyat":0}]
+${subContext}${typeContext}
+Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz (örn: 1/2 inç). SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catSub":"...","catType":"...","taban_fiyat":0}], "guncel_alt_baslik":"bu parçanın sonunda geçerli olan alt başlık"}. Bu metinde ürün yoksa items boş array olsun.
 
 Metin:
 ${chunks[idx]}`;
       try{
         const resp = await callClaude([{role:'user', content: prompt}], 4096);
-        const items = parseJsonLoose(resp);
+        const parsed = parsePdfChunkResponse(resp);
+        const items = parsed.items || [];
+        if(parsed.guncel_alt_baslik) currentSub = parsed.guncel_alt_baslik;
         for(const it of items){
-          if(it.catMain) usedMain.add(it.catMain);
-          if(it.catSub) usedSub.add(it.catSub);
+          it.catMain = fixedMain;
+          if(!it.catSub) it.catSub = currentSub || 'Diğer';
           if(it.catType) usedType.add(it.catType);
         }
         pdfExtractedItems = pdfExtractedItems.concat(items);
@@ -577,7 +649,7 @@ function calcPdfPrices(){
   const iskonto = document.getElementById('pdf-iskonto').value;
   const karmarji = document.getElementById('pdf-karmarji').value;
   const el = document.getElementById('pdf-results');
-  el.innerHTML = '<div class="divider"></div>' + pdfExtractedItems.map((it,idx)=>{
+  el.innerHTML = `<button class="btn btn-primary" onclick="saveAllPdfItems()">Tümünü stoğa ekle</button>` + '<div class="divider"></div>' + pdfExtractedItems.map((it,idx)=>{
     const price = computePrice(it.taban_fiyat, kdv, iskonto, karmarji);
     it._price = price;
     return `<div class="list-item">
@@ -591,7 +663,7 @@ function calcPdfPrices(){
       </div>
       <div class="price-tag">${price} ₺</div>
     </div>`;
-  }).join('') + `<button class="btn btn-primary" onclick="saveAllPdfItems()">Tümünü stoğa ekle</button>`;
+  }).join('');
 }
 async function saveAllPdfItems(){
   for(const it of pdfExtractedItems){
