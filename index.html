@@ -232,6 +232,7 @@
       </div>
       <button class="btn btn-primary" onclick="savePhotoItem()">Stoğa ekle</button>
     </div>
+    <div id="photo-batch-results" style="display:none; margin-top:16px;"></div>
   </div>
 
   <!-- BARCODE -->
@@ -1022,71 +1023,291 @@ async function handleJsonImport(e){
   }
 }
 
-// ---- Photo upload flow ----
+// ---- Photo upload flow (Tek veya Birden Fazla Ürün / Katalog Ayrıştırma) ----
 let photoBase64 = null, photoMedia = null;
+let photoDetectedItems = [];
+
+function cropImageFromBox(imgElement, box2d){
+  // box2d: [ymin, xmin, ymax, xmax] in 0-1000 scale
+  return new Promise((resolve) => {
+    try{
+      if(!box2d || box2d.length < 4){ resolve(null); return; }
+      const [ymin, xmin, ymax, xmax] = box2d;
+      const naturalWidth = imgElement.naturalWidth || imgElement.width;
+      const naturalHeight = imgElement.naturalHeight || imgElement.height;
+      if(!naturalWidth || !naturalHeight){ resolve(null); return; }
+
+      const padY = Math.max(0, (ymax - ymin) * 0.05);
+      const padX = Math.max(0, (xmax - xmin) * 0.05);
+
+      const y0 = Math.max(0, (ymin - padY) / 1000 * naturalHeight);
+      const x0 = Math.max(0, (xmin - padX) / 1000 * naturalWidth);
+      const y1 = Math.min(naturalHeight, (ymax + padY) / 1000 * naturalHeight);
+      const x1 = Math.min(naturalWidth, (xmax + padX) / 1000 * naturalWidth);
+
+      const cropW = Math.max(10, x1 - x0);
+      const cropH = Math.max(10, y1 - y0);
+
+      const canvas = document.createElement('canvas');
+      const maxDim = 220;
+      const scale = Math.min(1, maxDim / Math.max(cropW, cropH));
+      canvas.width = Math.max(1, Math.round(cropW * scale));
+      canvas.height = Math.max(1, Math.round(cropH * scale));
+
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(imgElement, x0, y0, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    }catch(err){
+      console.warn('Crop error:', err);
+      resolve(null);
+    }
+  });
+}
+
 async function handlePhotoFile(e){
   const file = e.target.files[0]; if(!file) return;
   const statusEl = document.getElementById('photo-status');
   const prev = document.getElementById('photo-preview');
-  prev.src = URL.createObjectURL(file); prev.style.display='block';
-  statusEl.textContent = 'Yapay zeka fotoğrafı inceliyor...';
+  const form = document.getElementById('photo-form');
+  const batchEl = document.getElementById('photo-batch-results');
+  
+  form.style.display = 'none';
+  batchEl.style.display = 'none';
+  batchEl.innerHTML = '';
+  photoDetectedItems = [];
+
+  prev.src = URL.createObjectURL(file);
+  prev.style.display = 'block';
+  statusEl.textContent = 'Görsel taranıyor, ürünler ve fiyatlar tespit ediliyor...';
+
   try{
     photoBase64 = await fileToBase64(file);
     photoMedia = file.type || 'image/jpeg';
-    const instructions = buildMatrixInstructions() + ` SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catMain":"...","catSub":"...","catType":"...","taban_fiyat":null,"price_detected":null}]}. catMain: geniş ana kategori (örn: Sıhhi Tesisat, Elektrik Elektronik, Nalbur, Hırdavat, Ev Dekor). price_detected: görselde doğrudan yazan satış fiyatı varsa o (sayı), yoksa null. taban_fiyat: fiyat listesi/katalog tablosuysa oradaki ham fiyat, yoksa null.`;
+
+    const loadedImg = new Image();
+    loadedImg.src = prev.src;
+    await new Promise((resolve) => {
+      if(loadedImg.complete) resolve();
+      else loadedImg.onload = () => resolve();
+    });
+
+    const promptText = `Aşağıdaki görseli çok dikkatlice incele.
+Bu görsel tek bir ürün fotoğrafı OLABİLECEĞİ GİBİ, bir hırdavat/nalbur/tesisat/sulama KATALOG SAYFASI, FİYAT LİSTESİ veya BROŞÜR DE OLABİLİR (örneğin 4x3 ızgarada 12 farklı sulama tabancası/lansı, armatürler, vanalar gibi).
+
+GÖRSELDEKİ TÜM ÜRÜNLERİ TEK TEK BUL VE LİSTELE.
+EĞER GÖRSELDE BİRDEN FAZLA ÜRÜN VEYA KUTU VARSA:
+- ASLA sadece 1 tanesini seçip bırakma!
+- Görseldeki TÜM ürünleri (10, 12, 20 kaç ürün varsa hepsini) tek tek listele!
+- Her ürün kutusunun içindeki başlığı (ürün adı), ürün kodunu (örneğin kırmızı kutulardaki 125, 126, 152, 194, 348 gibi kodları), satış fiyatını (örneğin "Fiyat: 53.00 TL" veya "90.00 TL") ve ürün fotoğrafının koordinatlarını (box2d) çıkar.
+
+Her ürün için şu alanları doldur:
+- name: Ürünün tam adı ve ölçüsü (örn: "1/2 inç Ayarlı Hortum Lansı", "Krom 6 Nozul Tabanca", "Tetikli Su Tabancası Jaklı")
+- catMain: Geniş ana kategori (örn: Bahçe Sulama, Sıhhi Tesisat, Hırdavat, Nalbur)
+- catSub: Malzeme/ürün grubu (örn: Hortum Lansları, Sulama Tabancaları, Ek Parçalar)
+- catType: Spesifik ürün tipi (örn: Lans, Tabanca, Vana, Rakor, Dirsek, Te)
+- barcode: Varsa ürün kodu veya barkod (örn: "125", "126", "152", "194", "199", "172", "348", "356")
+- price: Ürünün fiyatı (sayı olarak, örn: 53, 90, 280, 650, 190. Fiyat yoksa null)
+- box2d: Ürünün kendi görselinin/fotoğrafının sayfadaki sınırları: [ymin, xmin, ymax, xmax] (0 ile 1000 arasında normalleştirilmiş tamsayı koordinatlar). Bu kutu sadece ürünün nesne fotoğrafını kapsamalıdır.
+
+Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz.
+SADECE geçerli JSON döndür, açıklama veya markdown ekleme. Format:
+{"items":[{"name":"...","catMain":"...","catSub":"...","catType":"...","barcode":"...","price":53.0,"box2d":[ymin,xmin,ymax,xmax]}]}`;
+
     const resp = await callClaude([{role:'user', content:[
       {type:'image', source:{type:'base64', media_type:photoMedia, data:photoBase64}},
-      {type:'text', text:`Bu görselde bir veya birden fazla hırdavat/nalbur/tesisat ürünü olabilir — tek bir ürün fotoğrafı da olabilir, bir fiyat listesi/katalog/tablo sayfası da olabilir. Görseli dikkatlice incele ve içindeki TÜM ürünleri çıkar.\n\n${instructions}`}
+      {type:'text', text: promptText}
     ]}], 8192);
-    const parsed = parsePdfChunkResponse(resp);
-    const items = parsed.items || [];
-    if(items.length > 1){
-      pdfExtractedItems = items.map(it => ({
-        name: it.name,
-        catMain: it.catMain || 'Diğer',
+
+    const parsed = parseJsonLoose(resp);
+    const rawItems = parsed.items || (parsed.name ? [parsed] : []);
+
+    if(rawItems.length === 0){
+      statusEl.innerHTML = '<span class="err">Ürün tespit edilemedi. Lütfen elle girin veya daha net bir fotoğraf çekin.</span>';
+      form.style.display = 'block';
+      return;
+    }
+
+    // Crop photos for all items
+    statusEl.textContent = `${rawItems.length} ürün bulundu, fotoğrafları hazırlanıyor...`;
+    photoDetectedItems = [];
+
+    for(let i=0; i<rawItems.length; i++){
+      const it = rawItems[i];
+      let itemImage = null;
+      if(it.box2d && it.box2d.length === 4){
+        itemImage = await cropImageFromBox(loadedImg, it.box2d);
+      }
+      if(!itemImage && rawItems.length === 1){
+        try{ itemImage = await resizeDataUrl('data:'+photoMedia+';base64,'+photoBase64, 200, 0.7); }catch(e){}
+      }
+      photoDetectedItems.push({
+        name: it.name || 'İsimsiz Ürün',
+        catMain: it.catMain || 'Genel',
         catSub: it.catSub || 'Diğer',
         catType: it.catType || 'Diğer',
-        taban_fiyat: (it.taban_fiyat!=null ? it.taban_fiyat : it.price_detected) || 0
-      }));
-      statusEl.textContent = '';
-      document.getElementById('photo-form').style.display = 'none';
-      showScreen('pdf');
-      document.getElementById('pdf-status').textContent = items.length+' ürün tanındı (bu fotoğraf bir tablo/liste olarak algılandı). Aşağıdan oranları ayarlayıp listele.';
-      document.getElementById('pdf-config').style.display = 'block';
+        barcode: it.barcode || '',
+        price: it.price != null ? it.price : (it.taban_fiyat != null ? it.taban_fiyat : null),
+        quantity: 1,
+        unit: 'adet',
+        image: itemImage
+      });
+    }
+
+    if(photoDetectedItems.length > 1){
+      statusEl.innerHTML = `<span style="color:var(--teal); font-weight:700;">✅ Görseldeki ${photoDetectedItems.length} ürün başarıyla tek tek ayrıştırıldı!</span>`;
+      form.style.display = 'none';
+      renderPhotoBatchResults();
     } else {
-      const data = items[0] || {};
-      document.getElementById('photo-name').value = data.name||'';
-      document.getElementById('photo-catmain').value = data.catMain||'';
-      document.getElementById('photo-catsub').value = data.catSub||'';
-      document.getElementById('photo-cattype').value = data.catType||'';
-      const detectedPrice = data.price_detected!=null ? data.price_detected : data.taban_fiyat;
-      if(detectedPrice!=null) document.getElementById('photo-taban').value = detectedPrice;
-      statusEl.textContent = 'Tanındı. Bilgileri kontrol edip ekleyebilirsin.';
-      document.getElementById('photo-form').style.display = 'block';
+      // Single product
+      statusEl.textContent = '1 ürün tespit edildi. Bilgileri onaylayıp ekleyin:';
+      renderPhotoBatchResults();
     }
   }catch(err){
-    statusEl.innerHTML = '<span class="err">Tanıma başarısız, elle gir: '+escapeHtml(err.message)+'</span>';
-    document.getElementById('photo-form').style.display = 'block';
+    statusEl.innerHTML = '<span class="err">Tanıma sırasında hata: '+escapeHtml(err.message)+'</span>';
+    form.style.display = 'block';
   }
 }
-async function savePhotoItem(){
-  const taban = document.getElementById('photo-taban').value;
-  const kdv = document.getElementById('photo-kdv').value;
-  const karmarji = document.getElementById('photo-karmarji').value;
-  const price = taban ? computePrice(taban, kdv, 0, karmarji) : null;
-  let imgSmall = null;
-  if(photoBase64){ try{ imgSmall = await resizeDataUrl('data:'+photoMedia+';base64,'+photoBase64, 160, 0.6); }catch(e){} }
-  await addStockItem({
-    name: document.getElementById('photo-name').value,
-    catMain: document.getElementById('photo-catmain').value,
-    catSub: document.getElementById('photo-catsub').value,
-    catType: document.getElementById('photo-cattype').value,
-    price, quantity: Number(document.getElementById('photo-qty').value)||1, unit:'adet',
-    image: imgSmall
-  });
-  document.getElementById('photo-status').textContent = 'Stoğa eklendi.';
-  document.getElementById('photo-form').style.display='none';
+
+function renderPhotoBatchResults(){
+  const container = document.getElementById('photo-batch-results');
+  if(!container) return;
+  if(photoDetectedItems.length === 0){
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div class="card" style="border: 2px solid var(--accent); background: #FFF8F2; margin-bottom: 14px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+          <div style="font-weight:700; font-size:16px; color:var(--ink);">🎯 ${photoDetectedItems.length} Ürün Bulundu</div>
+          <div class="hint" style="margin-top:3px;">Fotoğraftaki her ürün ayrı ayrı ayrıştırıldı ve kendi görselleri kırpıldı.</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn btn-amber" style="flex:1; margin:0;" onclick="saveAllBatchPhotoItems()">
+          🚀 TÜMÜNÜ STOĞA EKLE (${photoDetectedItems.length} ÜRÜN)
+        </button>
+        <button class="btn btn-secondary" style="width:auto; margin:0; padding:10px 14px;" onclick="clearPhotoBatch()">
+          Temizle
+        </button>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      ${photoDetectedItems.map((it, idx) => `
+        <div class="list-item" style="align-items:flex-start; gap:12px; padding:12px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);">
+          ${it.image ? `
+            <img src="${it.image}" style="width:58px; height:58px; border-radius:10px; object-fit:contain; background:#ffffff; border:1px solid var(--line); flex-shrink:0;">
+          ` : `
+            <div style="width:58px; height:58px; border-radius:10px; background:${catColor(it.catMain)}22; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0;">📦</div>
+          `}
+
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+              <input type="text" value="${escapeHtml(it.name)}" oninput="photoDetectedItems[${idx}].name=this.value" style="font-weight:700; font-size:13.5px; padding:6px 8px; flex:1;" placeholder="Ürün adı">
+              <button class="iconbtn" onclick="removePhotoBatchItem(${idx})" style="width:28px; height:28px; color:var(--danger); flex-shrink:0;" title="Listeden çıkar">✕</button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:6px;">
+              <input type="text" list="category-main-datalist" value="${escapeHtml(it.catMain||'')}" oninput="photoDetectedItems[${idx}].catMain=this.value" style="font-size:11px; padding:4px 6px;" placeholder="Ana Kat.">
+              <input type="text" list="category-sub-datalist" value="${escapeHtml(it.catSub||'')}" oninput="photoDetectedItems[${idx}].catSub=this.value" style="font-size:11px; padding:4px 6px;" placeholder="Alt Grup">
+              <input type="text" list="category-type-datalist" value="${escapeHtml(it.catType||'')}" oninput="photoDetectedItems[${idx}].catType=this.value" style="font-size:11px; padding:4px 6px;" placeholder="Tip">
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+              <div style="display:flex; align-items:center; gap:4px;">
+                <span class="hint" style="font-size:11.5px;">Kod:</span>
+                <input type="text" value="${escapeHtml(it.barcode||'')}" oninput="photoDetectedItems[${idx}].barcode=this.value" style="width:75px; font-size:11.5px; padding:4px 6px;" placeholder="Kod">
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" value="${it.price!=null ? it.price : ''}" oninput="photoDetectedItems[${idx}].price=Number(this.value)||null" style="width:75px; font-weight:700; font-size:13.5px; padding:4px 6px; text-align:right;" placeholder="0">
+                <span style="font-weight:700; font-size:12px; color:var(--ink);">₺</span>
+                <button class="btn btn-secondary" style="width:auto; margin:0; padding:5px 11px; font-size:11.5px;" onclick="saveSingleBatchPhotoItem(${idx})">+ Stoğa Ekle</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    ${photoDetectedItems.length > 2 ? `
+      <button class="btn btn-amber" style="margin-top:14px;" onclick="saveAllBatchPhotoItems()">
+        🚀 TÜMÜNÜ STOĞA EKLE (${photoDetectedItems.length} ÜRÜN)
+      </button>
+    ` : ''}
+  `;
+}
+
+async function saveAllBatchPhotoItems(){
+  if(photoDetectedItems.length === 0) return;
+  const count = photoDetectedItems.length;
+  for(const it of photoDetectedItems){
+    await addStockItem({
+      name: it.name,
+      catMain: it.catMain,
+      catSub: it.catSub,
+      catType: it.catType,
+      barcode: it.barcode || null,
+      price: it.price,
+      quantity: 1,
+      unit: 'adet',
+      image: it.image || null
+    });
+  }
+  photoDetectedItems = [];
+  document.getElementById('photo-batch-results').innerHTML = `
+    <div class="card" style="border:2px solid var(--teal); background:var(--teal-bg); text-align:center; padding:18px;">
+      <div style="font-size:26px; margin-bottom:6px;">🎉</div>
+      <div style="font-weight:700; color:var(--teal); font-size:16px;">${count} Ürünün Tamamı Stoğa Eklendi!</div>
+      <div class="hint" style="margin-top:4px;">Fotoğraftan ayrıştırılan tüm ürünler ve görselleri kaydedildi.</div>
+      <button class="btn btn-primary" style="margin-top:12px;" onclick="goHome()">Ana Sayfaya Dön</button>
+    </div>
+  `;
   refreshHomeCount();
+}
+
+async function saveSingleBatchPhotoItem(idx){
+  const it = photoDetectedItems[idx];
+  if(!it) return;
+  await addStockItem({
+    name: it.name,
+    catMain: it.catMain,
+    catSub: it.catSub,
+    catType: it.catType,
+    barcode: it.barcode || null,
+    price: it.price,
+    quantity: 1,
+    unit: 'adet',
+    image: it.image || null
+  });
+  photoDetectedItems.splice(idx, 1);
+  refreshHomeCount();
+  if(photoDetectedItems.length === 0){
+    document.getElementById('photo-batch-results').innerHTML = `
+      <div class="card" style="border:2px solid var(--teal); background:var(--teal-bg); text-align:center; padding:16px;">
+        <div style="font-weight:700; color:var(--teal); font-size:15px;">Tüm Ürünler Stoğa Eklendi!</div>
+        <button class="btn btn-primary" style="margin-top:10px;" onclick="goHome()">Ana Sayfaya Dön</button>
+      </div>
+    `;
+  } else {
+    renderPhotoBatchResults();
+  }
+}
+
+function removePhotoBatchItem(idx){
+  photoDetectedItems.splice(idx, 1);
+  renderPhotoBatchResults();
+}
+
+function clearPhotoBatch(){
+  photoDetectedItems = [];
+  renderPhotoBatchResults();
 }
 
 // ---- Barcode flow ----
