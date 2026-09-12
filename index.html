@@ -165,11 +165,22 @@
       <div style="font-weight:600;">Tüm stoğu görüntüle</div>
       <div class="action-sub" id="stock-count-label">Yükleniyor…</div>
     </div>
+    <div class="card" style="text-align:center;cursor:pointer;" onclick="document.getElementById('json-import-file').click()">
+      <div style="font-weight:600;">Dosyadan içe aktar</div>
+      <div class="action-sub">Claude'un hazırladığı ürün dosyasını (.json) yükle</div>
+    </div>
+    <input type="file" id="json-import-file" accept="application/json,.json" style="display:none" onchange="handleJsonImport(event)">
   </div>
 
   <!-- STOCK LIST -->
   <div class="screen" id="screen-list">
-    <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2 id="list-title">Stok</h2></div>
+    <div class="back-row">
+      <button class="iconbtn" onclick="goHome()">←</button>
+      <h2 id="list-title" style="flex:1;">Stok</h2>
+      <button class="iconbtn" onclick="deleteAllInView()" aria-label="Bu listeyi topluca sil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
+    </div>
     <div id="list-content"></div>
   </div>
 
@@ -699,8 +710,10 @@ function closeDrawer(){
   document.getElementById('drawer-backdrop').classList.remove('open');
 }
 
+let lastListFilter = {};
 async function renderList(filter){
   filter = filter || {};
+  lastListFilter = filter;
   const titleParts = [filter.main, filter.sub, filter.type].filter(Boolean);
   document.getElementById('list-title').textContent = titleParts.length ? titleParts.join(' › ') : 'Tüm stok';
   const items = await getAllItems();
@@ -721,7 +734,36 @@ async function renderList(filter){
         <span class="tag" style="background:${catColor(it.catMain)}22;color:${catColor(it.catMain)}">${escapeHtml(it.catType||'-')}</span>
       </div>
       <div class="price-tag">${it.price!=null? it.price+' ₺':'-'}</div>
+      <button class="iconbtn" onclick="deleteStockItem('${it.id}')" style="width:32px;height:32px;flex-shrink:0;" aria-label="Sil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
     </div>`).join('');
+}
+async function deleteStockItem(id){
+  if(!confirm('Bu ürünü silmek istediğine emin misin?')) return;
+  try{ localStorage.removeItem('imsaapp:stock:'+id); }catch(e){}
+  const ids = await getIndex();
+  await saveIndex(ids.filter(x=>x!==id));
+  renderList(lastListFilter);
+  refreshHomeCount();
+}
+async function deleteAllInView(){
+  const label = [lastListFilter.main, lastListFilter.sub, lastListFilter.type].filter(Boolean).join(' › ') || 'TÜM STOK';
+  if(!confirm(`"${label}" içindeki tüm ürünler silinecek. Bu geri alınamaz. Emin misin?`)) return;
+  const ids = await getIndex();
+  const toKeep = [];
+  for(const id of ids){
+    const it = await getItem(id);
+    const matches = it &&
+      (!lastListFilter.main || it.catMain===lastListFilter.main) &&
+      (!lastListFilter.sub || it.catSub===lastListFilter.sub) &&
+      (!lastListFilter.type || it.catType===lastListFilter.type);
+    if(matches){ try{ localStorage.removeItem('imsaapp:stock:'+id); }catch(e){} }
+    else toKeep.push(id);
+  }
+  await saveIndex(toKeep);
+  renderList(lastListFilter);
+  refreshHomeCount();
 }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
@@ -762,6 +804,9 @@ async function runSearch(){
         <span class="tag" style="background:${catColor(it.catMain)}22;color:${catColor(it.catMain)}">${escapeHtml(it.catType||'-')}</span>
       </div>
       <div class="price-tag">${it.price!=null? it.price+' ₺':'-'}</div>
+      <button class="iconbtn" onclick="deleteStockItem('${it.id}').then(runSearch)" style="width:32px;height:32px;flex-shrink:0;" aria-label="Sil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
     </div>`).join('');
 }
 
@@ -912,8 +957,13 @@ function calcPdfPrices(){
         </div>
       </div>
       <div class="price-tag">${price} ₺</div>
+      <button class="iconbtn" onclick="removePdfItem(${idx})" style="width:30px;height:30px;flex-shrink:0;color:var(--danger);" aria-label="Listeden çıkar">✕</button>
     </div>`;
   }).join('');
+}
+function removePdfItem(idx){
+  pdfExtractedItems.splice(idx,1);
+  calcPdfPrices();
 }
 async function saveAllPdfItems(){
   for(const it of pdfExtractedItems){
@@ -922,6 +972,28 @@ async function saveAllPdfItems(){
   clearJobProgress();
   document.getElementById('pdf-results').innerHTML = '<div class="hint">Eklendi. Ana sayfaya dönebilirsin.</div>';
   refreshHomeCount();
+}
+async function handleJsonImport(e){
+  const file = e.target.files[0]; if(!file) return;
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const items = Array.isArray(data) ? data : (data.items || []);
+    if(!items.length){ alert('Dosyada ürün bulunamadı.'); return; }
+    pdfExtractedItems = items.map(it => ({
+      name: it.name || '',
+      catMain: it.catMain || 'Diğer',
+      catSub: it.catSub || 'Diğer',
+      catType: it.catType || 'Diğer',
+      taban_fiyat: it.taban_fiyat!=null ? it.taban_fiyat : (it.price!=null ? it.price : 0),
+      image: it.image || null
+    }));
+    showScreen('pdf');
+    document.getElementById('pdf-status').textContent = items.length+' ürün dosyadan yüklendi. Aşağıdan oranları ayarlayıp listele.';
+    document.getElementById('pdf-config').style.display = 'block';
+  }catch(err){
+    alert('Dosya okunamadı: '+err.message);
+  }
 }
 
 // ---- Photo upload flow ----
