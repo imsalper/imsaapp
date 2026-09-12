@@ -68,6 +68,7 @@
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 18px;border-radius:12px;border:none;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:16px;}
   .btn-primary{background:var(--accent);color:var(--accent-ink);}
+  .btn-amber{background:var(--amber);color:#fff;}
   .btn-secondary{background:var(--panel);color:var(--ink);border:1px solid var(--line);}
   .btn:active{opacity:0.85;}
   .btn:disabled{opacity:0.5;cursor:not-allowed;}
@@ -175,6 +176,7 @@
   <!-- PDF UPLOAD -->
   <div class="screen" id="screen-pdf">
     <div class="back-row"><button class="iconbtn" onclick="goHome()">←</button><h2>PDF ile stok yükle</h2></div>
+    <div id="pdf-resume-banner" style="display:none;"></div>
     <div class="dropzone" id="pdf-drop" onclick="document.getElementById('pdf-file').click()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       <div id="pdf-drop-label">Fiyat listesi PDF'ini seçmek için dokun</div>
@@ -287,6 +289,13 @@
     <div id="search-results" style="margin-top:16px;"></div>
   </div>
 
+</div>
+
+<div class="chat-overlay" id="catpick-overlay">
+  <div class="chat-panel" style="height:auto;max-height:75vh;border-radius:20px;">
+    <div class="chat-head"><strong id="catpick-title">Hangi ana kategoriye eklensin?</strong></div>
+    <div style="padding:16px;overflow-y:auto;" id="catpick-body"></div>
+  </div>
 </div>
 
 <button class="fab" onclick="openChat()" aria-label="Yapay zeka asistanı">
@@ -479,9 +488,72 @@ function showScreen(name, opts){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
   if(name==='list') renderList(opts);
+  if(name==='pdf') checkPdfResume();
   closeDrawer();
 }
 function goHome(){ showScreen('home'); refreshHomeCount(); }
+
+// ---- PDF job persistence (resume after interruption) ----
+function saveJobProgress(job){ try{ localStorage.setItem('imsaapp:pdf-job', JSON.stringify(job)); }catch(e){} }
+function loadJobProgress(){ try{ const v = localStorage.getItem('imsaapp:pdf-job'); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+function clearJobProgress(){ try{ localStorage.removeItem('imsaapp:pdf-job'); }catch(e){} }
+function checkPdfResume(){
+  const job = loadJobProgress();
+  const banner = document.getElementById('pdf-resume-banner');
+  if(!job){ banner.style.display='none'; banner.innerHTML=''; return; }
+  if(job.nextIndex < job.chunks.length){
+    banner.style.display='block';
+    banner.innerHTML = `<div class="card"><div style="font-weight:600;">Yarım kalmış işlem var</div><div class="hint">${escapeHtml(job.fileName||'PDF')} — ${job.nextIndex}/${job.chunks.length} parça tamamlanmış, ${job.items.length} ürün bulunmuş.</div>
+      <button class="btn btn-primary" onclick="resumePdfJob()">Kaldığı yerden devam et</button>
+      <button class="btn btn-secondary" onclick="discardPdfJob()">Sil, baştan başla</button></div>`;
+  } else {
+    banner.style.display='block';
+    banner.innerHTML = `<div class="card"><div style="font-weight:600;">Tamamlanmış ama kaydedilmemiş bir liste var</div><div class="hint">${escapeHtml(job.fileName||'PDF')} — ${job.items.length} ürün hazır, stoğa eklemeyi bekliyor.</div>
+      <button class="btn btn-primary" onclick="reviewFinishedPdfJob()">Listeyi gör</button>
+      <button class="btn btn-secondary" onclick="discardPdfJob()">Sil</button></div>`;
+  }
+}
+function resumePdfJob(){
+  const job = loadJobProgress();
+  if(!job) return;
+  document.getElementById('pdf-resume-banner').style.display='none';
+  processPdfChunks(job);
+}
+function reviewFinishedPdfJob(){
+  const job = loadJobProgress();
+  if(!job) return;
+  pdfExtractedItems = job.items;
+  document.getElementById('pdf-status').textContent = job.items.length+' ürün hazır. Aşağıdan oranları ayarlayıp listele.';
+  document.getElementById('pdf-config').style.display='block';
+  document.getElementById('pdf-resume-banner').style.display='none';
+}
+function discardPdfJob(){
+  clearJobProgress();
+  document.getElementById('pdf-resume-banner').style.display='none';
+  document.getElementById('pdf-resume-banner').innerHTML='';
+}
+
+// ---- category pick modal ----
+function showCategoryPickModal(existingMains, detectedSub, onChoose){
+  const overlay = document.getElementById('catpick-overlay');
+  const body = document.getElementById('catpick-body');
+  document.getElementById('catpick-title').textContent = `"${detectedSub}" ürünleri hangi ana kategoriye eklensin?`;
+  const mEsc = s => escapeHtml(s).replace(/'/g,"\\'");
+  body.innerHTML = (existingMains.length ? existingMains.map(m=>`<button class="btn btn-secondary" style="margin-top:8px;" onclick="chooseCatMain('${mEsc(m)}')">${escapeHtml(m)}</button>`).join('') : '<div class="hint">Henüz ana kategori yok.</div>') +
+    `<div class="divider"></div><label>Veya yeni ana kategori yaz</label><input type="text" id="catpick-new" placeholder="örn: Sıhhi Tesisat">
+     <button class="btn btn-primary" onclick="chooseCatMainFromInput()">Bu isimle ekle</button>`;
+  overlay.classList.add('open');
+  window._catPickResolve = onChoose;
+}
+function chooseCatMain(main){
+  document.getElementById('catpick-overlay').classList.remove('open');
+  if(window._catPickResolve) window._catPickResolve(main);
+}
+function chooseCatMainFromInput(){
+  const v = document.getElementById('catpick-new').value.trim();
+  if(!v) return;
+  chooseCatMain(v);
+}
 async function openDrawer(){
   const dc = document.getElementById('drawer-cats');
   const tree = await getCategoryTree();
@@ -490,24 +562,45 @@ async function openDrawer(){
   if(mains.length===0){
     html += '<div class="hint" style="padding:10px;">Henüz kategori yok, ürün ekledikçe burada listelenecek.</div>';
   } else {
-    for(const main of mains){
+    mains.forEach((main, mi) => {
       const mEsc = escapeHtml(main).replace(/'/g,"\\'");
-      html += `<div class="cat-item" style="font-weight:700;" onclick="showScreen('list',{main:'${mEsc}'})"><span class="cat-dot" style="background:${catColor(main)}"></span>${escapeHtml(main)}</div>`;
+      const mainGroupId = `catgrp-m${mi}`;
+      html += `<div class="cat-item" style="font-weight:700;">
+        <span onclick="toggleCatGroup(event,'${mainGroupId}')" style="cursor:pointer;width:18px;flex-shrink:0;" id="${mainGroupId}-arrow">▸</span>
+        <span onclick="showScreen('list',{main:'${mEsc}'})" style="flex:1;cursor:pointer;display:flex;align-items:center;gap:10px;"><span class="cat-dot" style="background:${catColor(main)}"></span>${escapeHtml(main)}</span>
+      </div>
+      <div id="${mainGroupId}" style="display:none;">`;
       const subs = Object.keys(tree[main]).sort((a,b)=>a.localeCompare(b,'tr'));
-      for(const sub of subs){
+      subs.forEach((sub, si) => {
         const sEsc = escapeHtml(sub).replace(/'/g,"\\'");
-        html += `<div class="cat-item" style="padding-left:26px;font-weight:600;" onclick="showScreen('list',{main:'${mEsc}',sub:'${sEsc}'})"><span class="cat-dot" style="background:${catColor(main)}"></span>${escapeHtml(sub)}</div>`;
+        const subGroupId = `catgrp-m${mi}-s${si}`;
+        html += `<div class="cat-item" style="padding-left:20px;font-weight:600;">
+          <span onclick="toggleCatGroup(event,'${subGroupId}')" style="cursor:pointer;width:18px;flex-shrink:0;" id="${subGroupId}-arrow">▸</span>
+          <span onclick="showScreen('list',{main:'${mEsc}',sub:'${sEsc}'})" style="flex:1;cursor:pointer;display:flex;align-items:center;gap:10px;"><span class="cat-dot" style="background:${catColor(main)}"></span>${escapeHtml(sub)}</span>
+        </div>
+        <div id="${subGroupId}" style="display:none;">`;
         const types = Array.from(tree[main][sub]).sort((a,b)=>a.localeCompare(b,'tr'));
-        for(const type of types){
+        types.forEach(type => {
           const tEsc = escapeHtml(type).replace(/'/g,"\\'");
-          html += `<div class="cat-item" style="padding-left:42px;font-size:13.5px;" onclick="showScreen('list',{main:'${mEsc}',sub:'${sEsc}',type:'${tEsc}'})"><span class="cat-dot" style="background:${catColor(main)}"></span>${escapeHtml(type)}</div>`;
-        }
-      }
-    }
+          html += `<div class="cat-item" style="padding-left:52px;font-size:13.5px;cursor:pointer;" onclick="showScreen('list',{main:'${mEsc}',sub:'${sEsc}',type:'${tEsc}'})"><span class="cat-dot" style="background:${catColor(main)}"></span>${escapeHtml(type)}</div>`;
+        });
+        html += `</div>`;
+      });
+      html += `</div>`;
+    });
   }
   dc.innerHTML = html;
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-backdrop').classList.add('open');
+}
+function toggleCatGroup(evt, id){
+  evt.stopPropagation();
+  const el = document.getElementById(id);
+  const arrow = document.getElementById(id+'-arrow');
+  if(!el) return;
+  const isOpen = el.style.display === 'block';
+  el.style.display = isOpen ? 'none' : 'block';
+  if(arrow) arrow.textContent = isOpen ? '▸' : '▾';
 }
 function closeDrawer(){
   document.getElementById('drawer').classList.remove('open');
@@ -587,8 +680,6 @@ async function handlePdfFile(e){
   statusEl.textContent = 'PDF okunuyor...';
   document.getElementById('pdf-drop-label').textContent = file.name;
   try{
-    const fixedMain = window.prompt('Bu PDF hangi ana kategoriye ait? (tüm ürünlere uygulanacak)', 'Sıhhi Tesisat');
-    if(fixedMain === null){ statusEl.textContent=''; return; }
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data:buf}).promise;
     const pageTexts = [];
@@ -605,15 +696,52 @@ async function handlePdfFile(e){
     }
     if(cur.trim()) chunks.push(cur);
 
-    pdfExtractedItems = [];
-    let failedChunks = 0;
-    let currentSub = null;
-    const usedType = new Set();
-    for(let idx=0; idx<chunks.length; idx++){
-      statusEl.textContent = `Yapay zeka ürünleri ayıklıyor... (${idx+1}/${chunks.length} parça, şu ana kadar ${pdfExtractedItems.length} ürün)`;
-      const subContext = `\n\nBir önceki parçadan devam eden bilinen ALT BAŞLIK: ${currentSub ? '"'+currentSub+'"' : 'yok (henüz belli değil)'}. Bu parçada metnin başında YENİ bir alt başlık görüyorsan onu kullan ve döndür; görmüyorsan (yani bu parça önceki alt başlığın devamıysa) yukarıdaki bilinen alt başlığı aynen kullanmaya devam et.`;
-      const typeContext = usedType.size ? `\n\nŞu ana kadar kullanılan ürün tipi isimleri (uyan varsa AYNEN kullan, benzer ama farklı yazımlı yeni isim uydurma): ${Array.from(usedType).join(', ')}` : '';
-      const prompt = `Aşağıda bir hırdavat/nalbur/tesisat fiyat listesi PDF'inin bir bölümünden çıkarılmış ham metin var. Bu metin bir ALT BAŞLIK altındaki ürünleri içerir (örnek alt başlıklar: "PPRC Ek Parçalar", "UPVC ve Ek Parçaları", "Kaplin/Sulama", "Metal", "Sarı" gibi — bunlar sadece örnek, gerçek başlığı metinden birebir al). Metni ürün ürün ayır. Her ürün için:
+    statusEl.textContent = 'Bu listenin ürün grubu tespit ediliyor...';
+    let detectedSub = 'Diğer';
+    try{
+      const resp = await callClaude([{role:'user', content: `Aşağıdaki metin bir ürün/fiyat listesinin başlangıcı. Bu listenin tamamının ait olduğu TEK bir alt kategori/malzeme grubu ismini belirle (örnek: Kaplin, PPRC Ek Parçalar, UPVC Boru, Vanalar). SADECE JSON döndür: {"altKategori":"..."}\n\nMetin:\n${chunks[0].slice(0,1500)}`}], 200);
+      const d = parseJsonLoose(resp);
+      detectedSub = d.altKategori || 'Diğer';
+    }catch(e2){}
+
+    const tree = await getCategoryTree();
+    let existingMain = null, existingSubExact = detectedSub;
+    for(const main of Object.keys(tree)){
+      for(const sub of Object.keys(tree[main])){
+        if(sub.toLowerCase() === detectedSub.toLowerCase()){ existingMain = main; existingSubExact = sub; break; }
+      }
+      if(existingMain) break;
+    }
+
+    const startJob = (fixedMain, seedSub) => {
+      const job = { fileName: file.name, chunks, nextIndex:0, fixedMain, currentSub: seedSub, usedType: [], items: [], failedChunks:0 };
+      saveJobProgress(job);
+      document.getElementById('pdf-resume-banner').style.display='none';
+      processPdfChunks(job);
+    };
+
+    if(existingMain){
+      statusEl.textContent = `"${existingSubExact}" zaten "${existingMain}" altında kayıtlı, oraya eklenecek...`;
+      startJob(existingMain, existingSubExact);
+    } else {
+      showCategoryPickModal(Object.keys(tree), detectedSub, (chosenMain)=>{
+        startJob(chosenMain, detectedSub);
+      });
+    }
+  }catch(err){
+    statusEl.innerHTML = '<span class="err">Bir hata oluştu: '+escapeHtml(err.message)+'</span>';
+  }
+}
+async function processPdfChunks(job){
+  const statusEl = document.getElementById('pdf-status');
+  const usedType = new Set(job.usedType || []);
+  let currentSub = job.currentSub || null;
+  let failedChunks = job.failedChunks || 0;
+  for(let idx=job.nextIndex; idx<job.chunks.length; idx++){
+    statusEl.textContent = `Yapay zeka ürünleri ayıklıyor... (${idx+1}/${job.chunks.length} parça, şu ana kadar ${job.items.length} ürün)`;
+    const subContext = `\n\nBir önceki parçadan devam eden bilinen ALT BAŞLIK: ${currentSub ? '"'+currentSub+'"' : 'yok (henüz belli değil)'}. Bu parçada metnin başında YENİ bir alt başlık görüyorsan onu kullan ve döndür; görmüyorsan (yani bu parça önceki alt başlığın devamıysa) yukarıdaki bilinen alt başlığı aynen kullanmaya devam et.`;
+    const typeContext = usedType.size ? `\n\nŞu ana kadar kullanılan ürün tipi isimleri (uyan varsa AYNEN kullan, benzer ama farklı yazımlı yeni isim uydurma): ${Array.from(usedType).join(', ')}` : '';
+    const prompt = `Aşağıda bir hırdavat/nalbur/tesisat fiyat listesi PDF'inin bir bölümünden çıkarılmış ham metin var. Bu metin bir ALT BAŞLIK altındaki ürünleri içerir (örnek alt başlıklar: "PPRC Ek Parçalar", "UPVC ve Ek Parçaları", "Kaplin/Sulama", "Metal", "Sarı" gibi — bunlar sadece örnek, gerçek başlığı metinden birebir al). Metni ürün ürün ayır. Her ürün için:
 - name: ürünün tam adı (ölçüsüyle birlikte, örn: "Dirsek 90 derece 32mm")
 - catSub: bu ürünün ait olduğu alt başlık (metinde görüyorsan birebir kullan)
 - catType: ürünün spesifik tipi (örnek: Dirsek, Manşon, Vana, Rakor, T Parça, Redüksiyon, Muffe, Conta, Adaptör, Anahtar) — aynı tip ürünler (farklı ölçülerde olsa bile) aynı catType değerini almalı
@@ -622,34 +750,37 @@ ${subContext}${typeContext}
 Değerlerin içinde ASLA çift tırnak (") kullanma; ölçü belirtmen gerekirse inç işareti yerine 'inç' kelimesini yaz (örn: 1/2 inç). SADECE JSON döndür, başka hiçbir açıklama, markdown işareti ekleme. Format: {"items":[{"name":"...","catSub":"...","catType":"...","taban_fiyat":0}], "guncel_alt_baslik":"bu parçanın sonunda geçerli olan alt başlık"}. Bu metinde ürün yoksa items boş array olsun.
 
 Metin:
-${chunks[idx]}`;
-      try{
-        const resp = await callClaude([{role:'user', content: prompt}], 4096);
-        const parsed = parsePdfChunkResponse(resp);
-        const items = parsed.items || [];
-        if(parsed.guncel_alt_baslik) currentSub = parsed.guncel_alt_baslik;
-        for(const it of items){
-          it.catMain = fixedMain;
-          if(!it.catSub) it.catSub = currentSub || 'Diğer';
-          if(it.catType) usedType.add(it.catType);
-        }
-        pdfExtractedItems = pdfExtractedItems.concat(items);
-      }catch(chunkErr){
-        failedChunks++;
+${job.chunks[idx]}`;
+    try{
+      const resp = await callClaude([{role:'user', content: prompt}], 4096);
+      const parsed = parsePdfChunkResponse(resp);
+      const items = parsed.items || [];
+      if(parsed.guncel_alt_baslik) currentSub = parsed.guncel_alt_baslik;
+      for(const it of items){
+        it.catMain = job.fixedMain;
+        if(!it.catSub) it.catSub = currentSub || 'Diğer';
+        if(it.catType) usedType.add(it.catType);
       }
+      job.items = job.items.concat(items);
+    }catch(chunkErr){
+      failedChunks++;
     }
-    statusEl.textContent = pdfExtractedItems.length+' ürün bulundu ('+pdf.numPages+' sayfanın tamamı tarandı)'+(failedChunks? ', '+failedChunks+' parça okunamadı':'')+'. Aşağıdan oranları ayarlayıp listele.';
-    document.getElementById('pdf-config').style.display = 'block';
-  }catch(err){
-    statusEl.innerHTML = '<span class="err">Bir hata oluştu: '+escapeHtml(err.message)+'</span>';
+    job.nextIndex = idx+1;
+    job.currentSub = currentSub;
+    job.usedType = Array.from(usedType);
+    job.failedChunks = failedChunks;
+    saveJobProgress(job);
   }
+  pdfExtractedItems = job.items;
+  statusEl.textContent = job.items.length+' ürün bulundu ('+job.chunks.length+' parçanın tamamı tarandı)'+(failedChunks? ', '+failedChunks+' parça okunamadı':'')+'. Aşağıdan oranları ayarlayıp listele.';
+  document.getElementById('pdf-config').style.display = 'block';
 }
 function calcPdfPrices(){
   const kdv = document.getElementById('pdf-kdv').value;
   const iskonto = document.getElementById('pdf-iskonto').value;
   const karmarji = document.getElementById('pdf-karmarji').value;
   const el = document.getElementById('pdf-results');
-  el.innerHTML = `<button class="btn btn-primary" onclick="saveAllPdfItems()">Tümünü stoğa ekle</button>` + '<div class="divider"></div>' + pdfExtractedItems.map((it,idx)=>{
+  el.innerHTML = `<button class="btn btn-amber" onclick="saveAllPdfItems()">Tümünü stoğa ekle</button>` + '<div class="divider"></div>' + pdfExtractedItems.map((it,idx)=>{
     const price = computePrice(it.taban_fiyat, kdv, iskonto, karmarji);
     it._price = price;
     return `<div class="list-item">
@@ -669,6 +800,7 @@ async function saveAllPdfItems(){
   for(const it of pdfExtractedItems){
     await addStockItem({name:it.name, catMain:it.catMain, catSub:it.catSub, catType:it.catType, price:it._price, quantity:1, unit:'adet'});
   }
+  clearJobProgress();
   document.getElementById('pdf-results').innerHTML = '<div class="hint">Eklendi. Ana sayfaya dönebilirsin.</div>';
   refreshHomeCount();
 }
